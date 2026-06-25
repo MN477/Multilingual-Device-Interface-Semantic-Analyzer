@@ -2,6 +2,7 @@ import os
 import cv2
 import numpy as np
 import torch
+import json
 from CRAFT.craft import CRAFT
 from CRAFT.imgproc import resize_aspect_ratio
 from CRAFT.craft_utils import getDetBoxes, adjustResultCoordinates
@@ -51,7 +52,7 @@ def detect_text_regions(
     low_text: float = 0.4,
     canvas_size: int = 1280,
     mag_ratio: float = 1.5
-) -> list[np.ndarray]:
+) -> tuple[list[np.ndarray], list[float]]:
     img_resized, target_ratio, size_heatmap = resize_aspect_ratio(
         img_rgb,
         canvas_size,
@@ -80,22 +81,36 @@ def detect_text_regions(
         poly=True
     )
 
-    boxes = adjustResultCoordinates(boxes, ratio_w, ratio_h)
+    # Adjust box coordinates to original image size
+    # Compute confidences using boxes in the resized image space (same as score_text)
+    confidences = []
+    for b in boxes:
+        if b is None or len(b) == 0:
+            confidences.append(0.0)
+            continue
+        # Convert box to integer polygon for mask creation (resized dimensions)
+        b_int = np.array(b, dtype=np.int32)
+        mask = np.zeros_like(score_text, dtype=np.uint8)
+        cv2.fillPoly(mask, [b_int], 1)
+        region_scores = score_text * mask
+        conf = float(np.sum(region_scores) / (np.sum(mask) + 1e-6))
+        confidences.append(conf)
+    # Adjust boxes to original image coordinates
+    boxes_adj = adjustResultCoordinates(boxes, ratio_w, ratio_h)
+    # Scale polys to original image size
     for k in range(len(polys)):
         if polys[k] is not None:
             polys[k] = polys[k] * (ratio_w * 2, ratio_h * 2)
-
     final_polys = []
-    for box, poly in zip(boxes, polys):
+    for box, poly in zip(boxes_adj, polys):
         if poly is None:
             final_polys.append(np.array(box, dtype=np.float32))
         else:
             final_polys.append(np.array(poly, dtype=np.float32))
+    return final_polys, confidences
 
-    return final_polys
 
-
-def localize_text(image_path: str, **craft_kwargs) -> tuple[np.ndarray, list[np.ndarray]]:
+def localize_text(image_path: str, **craft_kwargs) -> tuple[np.ndarray, list[np.ndarray], list[float]]:
     if not os.path.exists(image_path):
         raise FileNotFoundError(f"Target file path context does not exist: {image_path}")
 
@@ -111,9 +126,9 @@ def localize_text(image_path: str, **craft_kwargs) -> tuple[np.ndarray, list[np.
         img_rgb = cv2.cvtColor(img_raw, cv2.COLOR_GRAY2RGB)
 
     img_clean_rgb = strip_alpha_channel(img_rgb)
-    raw_polygons = detect_text_regions(img_clean_rgb, **craft_kwargs)
+    raw_polygons, confidences = detect_text_regions(img_clean_rgb, **craft_kwargs)
 
-    return img_clean_rgb, raw_polygons
+    return img_clean_rgb, raw_polygons, confidences
 
 
 def draw_polygons(img: np.ndarray, polygons: list[np.ndarray], output_path: str):
@@ -138,13 +153,32 @@ if __name__ == "__main__":
         test_img_path = sys.argv[1]
         try:
             print(f"Processing {test_img_path}...")
-            img_rgb, polys = localize_text(test_img_path)
+            img_rgb, polys, confidences = localize_text(test_img_path)
             print(f"Found {len(polys)} raw text regions.")
             
             debug_dir = "debug_img_text_local"
             os.makedirs(debug_dir, exist_ok=True)
             output_path = os.path.join(debug_dir, f"debug_{os.path.basename(test_img_path)}")
             draw_polygons(img_rgb, polys, output_path)
+            # Save coordinates to JSON (no OCR content)
+            json_path = os.path.join(debug_dir, f"coords_{os.path.splitext(os.path.basename(test_img_path))[0]}.json")
+            coords = []
+            for idx, (poly, conf) in enumerate(zip(polys, confidences)):
+                if poly is None or len(poly) == 0:
+                    continue
+                coords.append({
+                    "id": idx,
+                    "polygon": poly.tolist(),
+                    "confidence": conf
+                })
+            with open(json_path, "w", encoding="utf-8") as f:
+                json.dump({
+                    "image": test_img_path,
+                    "width": img_rgb.shape[1],
+                    "height": img_rgb.shape[0],
+                    "detections": coords
+                }, f, ensure_ascii=False, indent=2)
+            print(f"Coordinates saved to {json_path}")
         except Exception as e:
             print(f"Error: {e}")
     else:
