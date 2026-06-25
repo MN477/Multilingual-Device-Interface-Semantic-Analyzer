@@ -2,3 +2,6 @@ CRAFT/
 venv/
 geo_rectif_cropping.py
 ROI_enhanc.py 
+images/
+debug_img_text_local/
+

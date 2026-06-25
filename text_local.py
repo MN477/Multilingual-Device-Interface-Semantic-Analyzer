@@ -53,7 +53,16 @@ def strip_alpha_channel(img: np.ndarray) -> np.ndarray:
 _DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 _net = CRAFT().to(_DEVICE)
-_net.load_state_dict(torch.load("craft_mlt_25k.pth", map_location=_DEVICE))
+state_dict = torch.load("craft_mlt_25k.pth", map_location=_DEVICE)
+
+# Remove the "module." prefix added by DataParallel during training
+from collections import OrderedDict
+new_state_dict = OrderedDict()
+for k, v in state_dict.items():
+    name = k[7:] if k.startswith("module.") else k
+    new_state_dict[name] = v
+
+_net.load_state_dict(new_state_dict)
 _net.eval()
 
 
@@ -115,7 +124,11 @@ def detect_text_regions(
 
     # 🔹 Rescale to ORIGINAL image (CRITICAL)
     boxes = adjustResultCoordinates(boxes, ratio_w, ratio_h)
-    polys = adjustResultCoordinates(polys, ratio_w, ratio_h)
+    # polys contains arrays of varying lengths, so adjustResultCoordinates's np.array() crashes on modern numpy.
+    # We do it manually:
+    for k in range(len(polys)):
+        if polys[k] is not None:
+            polys[k] = polys[k] * (ratio_w * 2, ratio_h * 2)
 
     # Replace None polys with boxes
     final_polys = []
@@ -251,3 +264,43 @@ def localize_text(image_path: str, **craft_kwargs) -> tuple[np.ndarray, list[np.
     valid_polygons = validate_and_filter_polygons(raw_polygons, img_clean_rgb.shape)
 
     return img_clean_rgb, valid_polygons
+
+
+def draw_polygons(img: np.ndarray, polygons: list[np.ndarray], output_path: str):
+    """
+    Visual debugging tool: draws the valid polygons on the image and saves it.
+    """
+    # OpenCV expects BGR for saving
+    debug_img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+    
+    for poly in polygons:
+        pts = poly.astype(np.int32).reshape((-1, 1, 2))
+        cv2.polylines(debug_img, [pts], isClosed=True, color=(0, 255, 0), thickness=2)
+        
+        # Draw the first point in red to verify clockwise ordering
+        p1 = tuple(pts[0][0])
+        cv2.circle(debug_img, p1, radius=4, color=(0, 0, 255), thickness=-1)
+        
+    cv2.imwrite(output_path, debug_img)
+    print(f"Debug image saved to {output_path}")
+
+
+if __name__ == "__main__":
+    # Test script usage
+    import sys
+    if len(sys.argv) > 1:
+        test_img_path = sys.argv[1]
+        try:
+            print(f"Processing {test_img_path}...")
+            img_rgb, polys = localize_text(test_img_path)
+            print(f"Found {len(polys)} valid text regions.")
+            
+            # Save debug visualization
+            debug_dir = "debug_img_text_local"
+            os.makedirs(debug_dir, exist_ok=True)
+            output_path = os.path.join(debug_dir, f"debug_{os.path.basename(test_img_path)}")
+            draw_polygons(img_rgb, polys, output_path)
+        except Exception as e:
+            print(f"Error: {e}")
+    else:
+        print("Please provide an image path to test.")
