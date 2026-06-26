@@ -5,4 +5,7 @@ ROI_enhanc.py
 images/
 debug_img_text_local/
 test.py
-
+crops/
+debug_paddle_output/
+venvocr/
+easyocr_output.json
