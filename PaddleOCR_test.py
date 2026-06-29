@@ -22,6 +22,7 @@ os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 import sys
 import numpy as np
 import cv2
+import time
 
 # ──────────────────────────────────────────────
 # 1. Import & verify PaddlePaddle is working
@@ -62,7 +63,7 @@ ocr = PaddleOCR(
 # ──────────────────────────────────────────────
 # 3. Load image
 # ──────────────────────────────────────────────
-image_path = "images/chinese.jpg"
+image_path = "images/noisy.jpg"
 
 if not os.path.exists(image_path):
     print(f"ERROR: Image not found → {image_path}")
@@ -78,8 +79,11 @@ print(f"\nImage loaded: {image_path}  ({image.shape[1]}×{image.shape[0]})")
 # ──────────────────────────────────────────────
 # 4. Run OCR  (predict is the current API)
 # ──────────────────────────────────────────────
-print("\nRunning OCR (this may take a moment on first run while models download)...\n")
+print("\nRunning paddle OCR (this may take a moment on first run while models download)...\n")
+start_time = time.time()
 result = ocr.predict(image_path)
+end_time = time.time()
+print(f"Model inference time: {end_time - start_time:.3f} seconds")
 
 # ──────────────────────────────────────────────
 # 5. Print RAW result to see everything

@@ -3,14 +3,15 @@ import cv2
 import json
 import os
 import matplotlib.pyplot as plt
+import time
 
 # =========================
 # CONFIG
 # =========================
-IMAGE_PATH = "images/noisy.jpg"        # <-- change this
+IMAGE_PATH = "images/2561.jpg"        # <-- change this
 OUTPUT_JSON = "easyocr_output.json"
 CROP_DIR = "crops"
-LANGUAGES = ['ch_sim']             # add 'fr', 'ar' if needed
+LANGUAGES = ['en']             # add 'fr', 'ar' if needed
 CONF_THRESHOLD = 0.0           # change if you want filtering
 
 # =========================
@@ -34,7 +35,11 @@ reader = easyocr.Reader(LANGUAGES, gpu=False)
 # =========================
 # RUN OCR
 # =========================
+print("\nRunning easyOCR (this may take a moment on first run while models download)...\n")
+start_time = time.time()
 results = reader.readtext(image)
+end_time = time.time()
+print(f"Model inference time: {end_time - start_time:.3f} seconds")
 
 # =========================
 # PROCESS RESULTS

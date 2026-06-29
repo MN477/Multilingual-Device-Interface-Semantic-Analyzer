@@ -9,3 +9,12 @@ crops/
 debug_paddle_output/
 venvocr/
 easyocr_output.json
+
+*.jpg
+chang_im_input/
+*.json
+*.png
+venvch/
+venvdoctr/
+crops_rapidocr/
+
