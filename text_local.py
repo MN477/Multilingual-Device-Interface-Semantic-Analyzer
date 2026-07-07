@@ -7,6 +7,8 @@ from CRAFT.craft import CRAFT
 from CRAFT.imgproc import resize_aspect_ratio
 from CRAFT.craft_utils import getDetBoxes, adjustResultCoordinates
 
+
+
 def strip_alpha_channel(img: np.ndarray) -> np.ndarray:
     if len(img.shape) != 3 or img.shape[2] != 4:
         return img[:, :, :3] if len(img.shape) == 3 else img

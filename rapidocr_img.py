@@ -16,7 +16,7 @@ except ImportError:
 # =========================
 # CONFIG
 # =========================
-IMAGE_PATH = "images/noisy.jpg"  # <-- change this to your image path
+IMAGE_PATH = "images/13902.jpg"  # <-- change this to your image path
 OUTPUT_JSON = "rapidocr_output.json"
 CROP_DIR = "crops_rapidocr"
 CONF_THRESHOLD = 0.0  # change if you want to filter out low-confidence results

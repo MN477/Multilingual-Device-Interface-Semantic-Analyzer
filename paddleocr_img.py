@@ -63,7 +63,7 @@ ocr = PaddleOCR(
 # ──────────────────────────────────────────────
 # 3. Load image
 # ──────────────────────────────────────────────
-image_path = "images/noisy.jpg"
+image_path = "images/hybrid.png"
 
 if not os.path.exists(image_path):
     print(f"ERROR: Image not found → {image_path}")
