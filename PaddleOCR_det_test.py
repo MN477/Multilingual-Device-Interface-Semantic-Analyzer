@@ -94,7 +94,7 @@ for image_path in image_files:
     # ── Extract detection boxes ──
     all_boxes = []
     annotated = image.copy()
-        for page_idx, page in enumerate(result):
+    for page_idx, page in enumerate(result):
         # Get the detection polygons from the result
         if hasattr(page, "keys") or isinstance(page, dict):
             dt_polys = page.get("dt_polys", [])

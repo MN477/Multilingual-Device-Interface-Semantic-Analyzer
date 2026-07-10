@@ -21,3 +21,6 @@ __pycache__/
 input_images/
 sec_grtr/
 
+vclip/
+vlm/
+
