@@ -53,10 +53,11 @@ USER_PROMPT_TEMPLATE = """Analyze the text in this crop image.
 Identify the script/writing system used for the text (for example: Latin, Arabic, Chinese, Japanese, Korean, Cyrillic, Devanagari, Thai, Hebrew, or multiple scripts if mixed).
 
 Return the output strictly in valid JSON format matching this schema:
-{
+{ 
   "crop_id" : crop_003.png
   "script": "Script Name",
-  "confidence": 0.95
+  "confidence": 0.95,
+  "transcribed_text": "Optionally transcribe the text here if readable"
 }
 
 Ensure your response is valid JSON and contains nothing else."""
