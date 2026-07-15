@@ -56,14 +56,14 @@ ocr = PaddleOCR(
     use_doc_orientation_classify=False,
     use_doc_unwarping=False,
     use_textline_orientation=False,
-    lang="en",
+    lang="multilingual",
     device="cpu",
 )
 
 # ──────────────────────────────────────────────
 # 3. Load image
 # ──────────────────────────────────────────────
-image_path = "images/fr-screenshot.jpg"
+image_path = "images/hybrid.png"
 
 if not os.path.exists(image_path):
     print(f"ERROR: Image not found → {image_path}")
