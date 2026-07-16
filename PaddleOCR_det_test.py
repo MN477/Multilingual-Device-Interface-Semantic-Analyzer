@@ -33,6 +33,9 @@ except ImportError:
 # 2. Initialize detection-only model (CPU)
 # ──────────────────────────────────────────────
 # Note: PP-OCRv6 uses "medium" instead of "server"
+
+# to verify CUDA and change device if there s a GPU
+
 detector = TextDetection(model_name="PP-OCRv6_medium_det", device="cpu")
 
 
