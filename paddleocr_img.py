@@ -53,17 +53,17 @@ except ImportError:
 #    avoid downloading extra models that may fail
 #    on CPU-only builds.
 ocr = PaddleOCR(
-    use_doc_orientation_classify=False,
-    use_doc_unwarping=False,
-    use_textline_orientation=False,
-    lang="multilingual",
-    device="cpu",
+    use_doc_orientation_classify=True,
+    use_doc_unwarping=True,
+    use_textline_orientation=True,
+    lang="en",
+    device="cpu", 
 )
 
 # ──────────────────────────────────────────────
 # 3. Load image
 # ──────────────────────────────────────────────
-image_path = "images/hybrid.png"
+image_path = "input_images/LCD1.jpg"
 
 if not os.path.exists(image_path):
     print(f"ERROR: Image not found → {image_path}")
@@ -81,7 +81,7 @@ print(f"\nImage loaded: {image_path}  ({image.shape[1]}×{image.shape[0]})")
 # ──────────────────────────────────────────────
 print("\nRunning paddle OCR (this may take a moment on first run while models download)...\n")
 start_time = time.time()
-result = ocr.predict(image_path)
+result = ocr.predict(image_path, use_text_recognition=False)
 end_time = time.time()
 print(f"Model inference time: {end_time - start_time:.3f} seconds")
 
