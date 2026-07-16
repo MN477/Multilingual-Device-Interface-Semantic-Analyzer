@@ -81,7 +81,7 @@ print(f"\nImage loaded: {image_path}  ({image.shape[1]}×{image.shape[0]})")
 # ──────────────────────────────────────────────
 print("\nRunning paddle OCR (this may take a moment on first run while models download)...\n")
 start_time = time.time()
-result = ocr.predict(image_path)       
+result = ocr.predict(image_path, use_text_recognition=False)
 end_time = time.time()
 print(f"Model inference time: {end_time - start_time:.3f} seconds")
 
