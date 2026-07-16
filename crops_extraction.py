@@ -397,7 +397,7 @@ def main():
         help="Pixel padding around each crop (default: 2)",
     )
     parser.add_argument(
-        "--min_size", type=int, default=5,
+        "--min_size", type=int, default=7,
         help="Minimum crop dimension in pixels; smaller crops are rejected (default: 5)",
     )
     args = parser.parse_args()
