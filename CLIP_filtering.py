@@ -92,7 +92,7 @@ NON_TEXT_PROMPTS = [
     "a small image of an object or shape",
     # ── Scene elements ──
     "a photo of a surface, wall, or background without text",
-    "part of an image showing scenery, objects, or people",
+    "part of an image showing scenery, objects",
     "a solid color block or gradient region",
     "a shadow, reflection, or lighting artifact",
     # ── Structural false positives ──
