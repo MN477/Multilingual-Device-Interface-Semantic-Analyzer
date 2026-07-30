@@ -63,7 +63,7 @@ ocr = PaddleOCR(
 # ──────────────────────────────────────────────
 # 3. Load image
 # ──────────────────────────────────────────────
-image_path = "input_images/LCD1.jpg"
+image_path = "crops/10132/crop_028.png"
 
 if not os.path.exists(image_path):
     print(f"ERROR: Image not found → {image_path}")
@@ -81,7 +81,7 @@ print(f"\nImage loaded: {image_path}  ({image.shape[1]}×{image.shape[0]})")
 # ──────────────────────────────────────────────
 print("\nRunning paddle OCR (this may take a moment on first run while models download)...\n")
 start_time = time.time()
-result = ocr.predict(image_path, use_text_recognition=False)
+result = ocr.predict(image_path)
 end_time = time.time()
 print(f"Model inference time: {end_time - start_time:.3f} seconds")
 
