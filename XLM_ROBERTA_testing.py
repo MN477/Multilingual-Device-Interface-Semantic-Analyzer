@@ -2,7 +2,7 @@ import json
 import time
 from transformers import AutoTokenizer, AutoModelForTokenClassification, pipeline
 
-def test_ner_model(input_json_path="NER_dataset.json", output_json_path="NER_dataset_xlm_roberta_entities.json"):
+def test_ner_model(input_json_path="auto_loc_song1.json", output_json_path="auto_loc_song1_xlm_roberta_entities.json"):
     # Model name specified for NER execution
     model_name = "Davlan/xlm-roberta-base-ner-hrl"
     

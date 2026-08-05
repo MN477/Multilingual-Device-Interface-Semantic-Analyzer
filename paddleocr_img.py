@@ -63,7 +63,7 @@ ocr = PaddleOCR(
 # ──────────────────────────────────────────────
 # 3. Load image
 # ──────────────────────────────────────────────
-image_path = "crops/10132/crop_028.png"
+image_path = "input/auto_contacts.jpg"
 
 if not os.path.exists(image_path):
     print(f"ERROR: Image not found → {image_path}")

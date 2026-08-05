@@ -2,14 +2,14 @@ import json
 import time
 from gliner import GLiNER
 
-def test_gliner_model(input_json_path="NER_dataset.json", output_json_path="NER_dataset_gliner_entities.json"):
+def test_gliner_model(input_json_path="auto_contacts_converted.json", output_json_path="auto_contacts_GLINER_entities.json"):
     model_name = "urchade/gliner_multi-v2.1"
     
     print(f"Loading GLiNER model: {model_name}...")
     model = GLiNER.from_pretrained(model_name)
     
     # Target entity labels to extract using zero-shot GLiNER capabilities
-    labels = ["person", "organization", "location", "date", "time", "phone number", "address", "amount", "song title", "artist"]
+    labels = ["person name" , "organization" , "location" , "song name"]
     
     print(f"Reading input dataset from {input_json_path}...")
     with open(input_json_path, "r", encoding="utf-8") as f:
