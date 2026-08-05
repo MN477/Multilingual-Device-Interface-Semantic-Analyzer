@@ -1,146 +1,175 @@
 """
-PaddleOCR_det_test.py — Test only the PaddleOCR text detection model (no recognition).
-Outputs detected polygons/bounding boxes, confidence, and annotated images.
+paddleocr_det_module.py
+=======================
+Text Detection module using PaddleOCR's TextDetection engine.
+Refactored to implement BasePipelineStage for maximum modularity.
 """
 
 import json
 import os
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 import sys
-import numpy as np
-import cv2
 import time
 import glob
+from typing import Dict, Any, List, Optional
 
-# ──────────────────────────────────────────────
-# 1. Import & verify
-# ──────────────────────────────────────────────
+import numpy as np
+import cv2
+
+from pipeline_core import BasePipelineStage, PipelineContext
+
 try:
     import paddle
-    print(f"PaddlePaddle version : {paddle.__version__}")
+    HAS_PADDLE = True
 except ImportError:
-    print("ERROR: paddlepaddle is not installed.")
-    sys.exit(1)
+    HAS_PADDLE = False
 
 try:
     from paddleocr import TextDetection
-    print("Using PaddleOCR TextDetection module (detection-only)")
+    HAS_PADDLEOCR = True
 except ImportError:
-    print("ERROR: paddleocr is not installed or TextDetection not available.")
-    sys.exit(1)
-
-# ──────────────────────────────────────────────
-# 2. Initialize detection-only model (CPU)
-# ──────────────────────────────────────────────
-# Note: PP-OCRv6 uses "medium" instead of "server"
-detector = TextDetection(model_name="PP-OCRv6_medium_det", device="cpu")
+    HAS_PADDLEOCR = False
 
 
+class PaddleDetStage(BasePipelineStage):
+    """
+    Pipeline stage for text detection using PaddleOCR TextDetection.
+    """
+    
+    def __init__(self, model_name: str = "PP-OCRv6_medium_det", device: str = "cpu", use_onnx: bool = False):
+        self.model_name = model_name
+        self.device = device
+        self.use_onnx = use_onnx
+        self.detector = None
+        self._init_detector()
+
+    def _init_detector(self):
+        if not HAS_PADDLEOCR:
+            raise ImportError("paddleocr is not installed or TextDetection is unavailable.")
+        
+        print(f"Initializing PaddleOCR TextDetection ({self.model_name}) on {self.device.upper()} (use_onnx={self.use_onnx})...")
+        # Initialize PaddleOCR detector instance
+        self.detector = TextDetection(model_name=self.model_name, device=self.device)
+
+    @property
+    def name(self) -> str:
+        return "DetectionStage"
+
+    def run(self, context: PipelineContext, config: Dict[str, Any]) -> PipelineContext:
+        image_path = context.image_path
+        if not os.path.exists(image_path):
+            raise FileNotFoundError(f"Input image not found: {image_path}")
+
+        image = cv2.imread(image_path)
+        if image is None:
+            raise ValueError(f"cv2 could not decode image: {image_path}")
+
+        context.original_image = image
+
+        det_output_dir = config.get("paths", {}).get("det_output_dir", "paddleocr_det_output")
+        os.makedirs(det_output_dir, exist_ok=True)
+
+        out_json_path = os.path.join(det_output_dir, f"{context.image_stem}_det.json")
+        out_annotated_path = os.path.join(det_output_dir, f"{context.image_stem}_det.png")
+
+        start_time = time.time()
+        result = self.detector.predict(image_path)
+        elapsed = time.time() - start_time
+
+        all_boxes = []
+        annotated = image.copy()
+
+        for page in result:
+            if hasattr(page, "keys") or isinstance(page, dict):
+                dt_polys = page.get("dt_polys", [])
+                dt_scores = page.get("dt_scores", [])
+            elif hasattr(page, "__dict__"):
+                dt_polys = getattr(page, "dt_polys", [])
+                dt_scores = getattr(page, "dt_scores", [])
+            else:
+                dt_polys, dt_scores = [], []
+
+            num_boxes = len(dt_polys)
+            for i in range(num_boxes):
+                poly = np.array(dt_polys[i], dtype=np.float32)
+                score = float(dt_scores[i]) if i < len(dt_scores) else -1.0
+
+                if poly.size >= 8:
+                    xmin, ymin = poly.min(axis=0)
+                    xmax, ymax = poly.max(axis=0)
+                    width = xmax - xmin
+                    height = ymax - ymin
+                    cx, cy = xmin + width / 2, ymin + height / 2
+
+                    pts_int = poly.astype(int)
+                    cv2.polylines(annotated, [pts_int], True, (0, 255, 0), 2)
+                    label = f"{score:.2f}"
+                    cv2.putText(annotated, label, (int(xmin), max(int(ymin) - 5, 15)),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 255), 1, cv2.LINE_AA)
+
+                    all_boxes.append({
+                        "index": i,
+                        "det_score": round(score, 4),
+                        "polygon": poly.tolist(),
+                        "bbox": [float(xmin), float(ymin), float(xmax), float(ymax)],
+                        "width": float(width),
+                        "height": float(height),
+                        "center": [float(cx), float(cy)],
+                    })
+
+        cv2.imwrite(out_annotated_path, annotated)
+
+        output_dict = {
+            "image_path": image_path,
+            "image_size": [image.shape[1], image.shape[0]],
+            "inference_time_sec": round(elapsed, 3),
+            "num_detections": len(all_boxes),
+            "detections": all_boxes,
+        }
+
+        with open(out_json_path, "w", encoding="utf-8") as f:
+            json.dump(output_dict, f, ensure_ascii=False, indent=2)
+
+        # Update context
+        context.det_json_path = out_json_path
+        context.annotated_det_image_path = out_annotated_path
+        context.detections = all_boxes
+        context.det_inference_time_sec = elapsed
+
+        print(f"[{self.name}] Detected {len(all_boxes)} regions in {elapsed:.3f}s -> {out_json_path}")
+        return context
 
 
-# ──────────────────────────────────────────────
-# 4. Configuration
-# ──────────────────────────────────────────────
-INPUT_IMAGE_PATH = "input_images/arabic_car.jpg"
-OUTPUT_JSON_PATH = "paddleocr_det_output/arabic_car_det.json"
-OUTPUT_ANNOTATED_PATH = "paddleocr_det_output/arabic_car_det.png"
-
-if not os.path.exists(INPUT_IMAGE_PATH):
-    print(f"ERROR: Input image not found -> {INPUT_IMAGE_PATH}")
-    sys.exit(1)
-
-out_dir = os.path.dirname(OUTPUT_JSON_PATH)
-if out_dir:
-    os.makedirs(out_dir, exist_ok=True)
-
-# ──────────────────────────────────────────────
-# 5. Process single image
-# ──────────────────────────────────────────────
-print("\n" + "=" * 80)
-print(f"Processing single image: {INPUT_IMAGE_PATH}")
-print("=" * 80)
-
-image = cv2.imread(INPUT_IMAGE_PATH)
-if image is None:
-    print(f"  ERROR: cv2 could not decode → {INPUT_IMAGE_PATH}.")
-    sys.exit(1)
-
-print(f"  Image size: ({image.shape[1]}×{image.shape[0]})")
-
-# ── Run detection only ──
-start_time = time.time()
-result = detector.predict(INPUT_IMAGE_PATH)
-
-end_time = time.time()
-inference_time = end_time - start_time
-
-print(f"  Detection inference time: {inference_time:.3f} seconds")
-
-# ── Extract detection boxes ──
-all_boxes = []
-annotated = image.copy()
-for page_idx, page in enumerate(result):
-    # Get the detection polygons from the result
-    if hasattr(page, "keys") or isinstance(page, dict):
-        dt_polys = page.get("dt_polys", [])
-        dt_scores = page.get("dt_scores", [])
-    elif hasattr(page, "__dict__"):
-        dt_polys = getattr(page, "dt_polys", [])
-        dt_scores = getattr(page, "dt_scores", [])
+# Standalone CLI execution
+def main():
+    config_path = "pipeline_config.json"
+    if os.path.exists(config_path):
+        with open(config_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
     else:
-        # Try to print raw result to understand the format
-        print(f"  Unexpected result type: {type(page)}")
-        print(f"  Raw: {str(page)[:500]}")
-        continue
+        config = {
+            "paths": {"det_output_dir": "paddleocr_det_output"},
+            "detection": {"model_name": "PP-OCRv6_medium_det"},
+            "runtime": {"device": "cpu", "use_onnx": False}
+        }
 
-num_boxes = len(dt_polys)
-print(f"  Detected {num_boxes} text region(s)")
+    det_cfg = config.get("detection", {})
+    runtime_cfg = config.get("runtime", {})
+    
+    stage = PaddleDetStage(
+        model_name=det_cfg.get("model_name", "PP-OCRv6_medium_det"),
+        device=runtime_cfg.get("device", "cpu"),
+        use_onnx=runtime_cfg.get("use_onnx", False)
+    )
 
-for i in range(num_boxes):
-    poly = np.array(dt_polys[i], dtype=np.float32)
-    score = float(dt_scores[i]) if i < len(dt_scores) else -1.0
+    test_image = "input_images/arabic_car.jpg"
+    if not os.path.exists(test_image):
+        print(f"Error: test image {test_image} not found.")
+        sys.exit(1)
 
-    if poly.size >= 8:
-        xmin, ymin = poly.min(axis=0)
-        xmax, ymax = poly.max(axis=0)
-        width = xmax - xmin
-        height = ymax - ymin
-        cx, cy = xmin + width / 2, ymin + height / 2
+    ctx = PipelineContext(image_path=test_image)
+    stage.run(ctx, config)
 
-        # Draw on annotated image
-        pts_int = poly.astype(int)
-        cv2.polylines(annotated, [pts_int], True, (0, 255, 0), 2)
-        label = f"{score:.2f}"
-        cv2.putText(annotated, label, (int(xmin), max(int(ymin) - 5, 15)),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 255), 1, cv2.LINE_AA)
 
-        all_boxes.append({
-            "index": i,
-            "det_score": round(score, 4),
-            "polygon": poly.tolist(),
-            "bbox": [float(xmin), float(ymin), float(xmax), float(ymax)],
-            "width": float(width),
-            "height": float(height),
-            "center": [float(cx), float(cy)],
-        })
-
-# ── Save outputs ──
-if OUTPUT_ANNOTATED_PATH:
-    annotated_dir = os.path.dirname(OUTPUT_ANNOTATED_PATH)
-    if annotated_dir:
-        os.makedirs(annotated_dir, exist_ok=True)
-    cv2.imwrite(OUTPUT_ANNOTATED_PATH, annotated)
-    print(f"  Annotated image saved -> {OUTPUT_ANNOTATED_PATH}")
-
-with open(OUTPUT_JSON_PATH, "w", encoding="utf-8") as f:
-    json.dump({
-        "image_path": INPUT_IMAGE_PATH,
-        "image_size": [image.shape[1], image.shape[0]],
-        "inference_time_sec": round(inference_time, 3),
-        "num_detections": len(all_boxes),
-        "detections": all_boxes,
-    }, f, ensure_ascii=False, indent=2)
-print(f"  JSON results saved   -> {OUTPUT_JSON_PATH}")
-
-print("\nDone! Processed 1 image (detection only).")
-
+if __name__ == "__main__":
+    main()
