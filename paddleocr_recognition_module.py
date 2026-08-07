@@ -10,6 +10,13 @@ and producing both full and filtered recognition JSON outputs.
 import json
 import os
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+os.environ["FLAGS_use_mkldnn"] = "0"
+os.environ["FLAGS_enable_pir_api"] = "0"
+os.environ["FLAGS_enable_pir_in_executor"] = "0"
+try:
+    import torch
+except Exception:
+    pass
 import sys
 import time
 import glob
@@ -44,14 +51,14 @@ class PaddleOCRRecognitionModule:
         self.device = device
         self.use_onnx = use_onnx
         
-        print(f"Initializing PaddleOCR TextRecognition ({model_name}, lang='{lang}') on {device.upper()}...")
-        # Note: lang parameter is explicitly passed here from configuration
+        print(f"Initializing PaddleOCR TextRecognition ({model_name}, lang='{lang}') on {device.upper()} (enable_mkldnn=False)...")
         try:
-            self.recognizer = TextRecognition(model_name=model_name, lang=lang, device=device)
+            self.recognizer = TextRecognition(model_name=model_name, lang=lang, device=device, enable_mkldnn=False)
         except Exception:
-            # Fallback if lang argument keyword is handled differently in specific PP-OCR versions
-            print(f"Warning: Initialization with lang='{lang}' failed; falling back to default model init.")
-            self.recognizer = TextRecognition(model_name=model_name, device=device)
+            try:
+                self.recognizer = TextRecognition(model_name=model_name, device=device, enable_mkldnn=False)
+            except Exception:
+                self.recognizer = TextRecognition(model_name=model_name, device=device)
 
     def recognize_crop(self, crop_path_or_img) -> Dict[str, Any]:
         """Recognize text in a single crop image."""

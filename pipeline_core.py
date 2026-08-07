@@ -3,7 +3,7 @@ pipeline_core.py
 ================
 Core abstractions for the modular OCR pipeline (Abstract Strategy Design Pattern).
 Defines `PipelineContext`, `BasePipelineStage`, and `PipelineRunner`.
-Includes per-stage latency tracking for full execution visibility.
+Includes per-stage and model-specific latency tracking for full execution visibility.
 """
 
 import os
@@ -55,6 +55,7 @@ class PipelineContext:
     final_json_path: Optional[str] = None
     final_annotated_image_path: Optional[str] = None
     final_results: List[Dict[str, Any]] = field(default_factory=list)
+    clip_inference_time_sec: float = 0.0
     
     def __post_init__(self):
         if not self.image_stem and self.image_path:
@@ -92,7 +93,7 @@ class BasePipelineStage(ABC):
 class PipelineRunner:
     """
     Orchestrator that executes a sequence of BasePipelineStage instances on context objects,
-    measuring latency per stage.
+    measuring precise latency per stage and overall pipeline processing time.
     """
     
     def __init__(self, stages: List[BasePipelineStage], config: Dict[str, Any]):

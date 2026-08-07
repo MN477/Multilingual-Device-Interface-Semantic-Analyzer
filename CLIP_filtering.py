@@ -18,12 +18,18 @@ import numpy as np
 import cv2
 
 try:
+    from PIL import Image
+    HAS_PIL = True
+except ImportError:
+    HAS_PIL = False
+
+try:
     import torch
     import clip
-    from PIL import Image
     HAS_CLIP = True
-except ImportError as e:
+except (ImportError, OSError, Exception) as e:
     HAS_CLIP = False
+    CLIP_IMPORT_ERROR = str(e)
 
 from pipeline_core import BasePipelineStage, PipelineContext
 
@@ -73,7 +79,7 @@ class CLIPTextFilter:
 
     def __init__(
         self,
-        model_name: str = "ViT-B/32",
+        model_name: str = "ViT-L/14",
         device: Optional[str] = None,
         threshold: float = 0.0,
     ):
@@ -92,7 +98,7 @@ class CLIPTextFilter:
         self.text_feats = self._encode_prompts(TEXT_PROMPTS)
         self.nontext_feats = self._encode_prompts(NON_TEXT_PROMPTS)
 
-    def _encode_prompts(self, prompts: List[str]) -> torch.Tensor:
+    def _encode_prompts(self, prompts: List[str]) -> Any:
         tokens = clip.tokenize(prompts).to(self.device)
         with torch.no_grad():
             features = self.model.encode_text(tokens)
@@ -101,7 +107,7 @@ class CLIPTextFilter:
 
     def classify_batch(
         self,
-        images: List[Image.Image],
+        images: List[Any],
         batch_size: int = 32,
     ) -> List[Dict[str, Any]]:
         results = []
@@ -139,7 +145,7 @@ class CLIPTextFilter:
         return results
 
 
-def load_crop_as_pil(crop_path: str) -> Optional[Image.Image]:
+def load_crop_as_pil(crop_path: str) -> Optional[Any]:
     try:
         img = Image.open(crop_path)
         if img.mode != "RGB":
@@ -188,12 +194,68 @@ class CLIPFilterStage(BasePipelineStage):
                 rec_data = json.load(f)
                 recog_results = rec_data.get("results", [])
 
-        if not recog_results:
-            print(f"[{self.name}] No recognition results available to filter.")
-            context.final_results = []
+        enable_clip = filter_cfg.get("enable_clip", True)
+        min_det_score = filter_cfg.get("min_det_score", 0.40)
+        min_rec_conf = filter_cfg.get("min_rec_confidence", 0.50)
+        filter_mode = filter_cfg.get("filter_mode", "AND")
+
+        # ── Dual Confidence Thresholding Mode (CLIP Disabled) ──
+        if not enable_clip:
+            print(f"[{self.name}] CLIP disabled in config. Running Dual Threshold Filter (det_thresh={min_det_score}, rec_thresh={min_rec_conf}, mode='{filter_mode}')...")
+            all_processed = []
+            for item in recog_results:
+                item_copy = dict(item)
+                det_s = item_copy.get("det_score", 0.0)
+                rec_c = item_copy.get("rec_confidence", 0.0)
+                item_copy["clip_evaluated"] = False
+
+                if filter_mode == "AND":
+                    if det_s >= min_det_score and rec_c >= min_rec_conf:
+                        item_copy["pipeline_status"] = "KEPT_CONF_FILTER"
+                    elif det_s < min_det_score:
+                        item_copy["pipeline_status"] = "REJECTED_LOW_DET"
+                    else:
+                        item_copy["pipeline_status"] = "REJECTED_LOW_REC"
+                elif filter_mode == "OR":
+                    if det_s >= min_det_score or rec_c >= min_rec_conf:
+                        item_copy["pipeline_status"] = "KEPT_CONF_FILTER"
+                    else:
+                        item_copy["pipeline_status"] = "REJECTED_LOW_CONF"
+                elif filter_mode == "WEIGHTED_SUM":
+                    w_det = filter_cfg.get("weight_det", 0.4)
+                    w_rec = filter_cfg.get("weight_rec", 0.6)
+                    comb = round(w_det * det_s + w_rec * rec_c, 4)
+                    item_copy["combined_score"] = comb
+                    if comb >= filter_cfg.get("min_combined_score", 0.45):
+                        item_copy["pipeline_status"] = "KEPT_COMBINED_SCORE"
+                    else:
+                        item_copy["pipeline_status"] = "REJECTED_LOW_COMBINED"
+                all_processed.append(item_copy)
+
+            all_processed.sort(key=lambda x: x.get("det_index", 0))
+            final_kept = [x for x in all_processed if x.get("pipeline_status", "").startswith("KEPT")]
+
+            final_json_path = os.path.join(final_output_dir, f"{context.image_stem}_final.json")
+            with open(final_json_path, "w", encoding="utf-8") as f:
+                json.dump({
+                    "image_stem": context.image_stem,
+                    "source_image": context.image_path,
+                    "enable_clip": False,
+                    "filter_mode": filter_mode,
+                    "min_det_score": min_det_score,
+                    "min_rec_confidence": min_rec_conf,
+                    "total_detections": len(all_processed),
+                    "total_kept_final": len(final_kept),
+                    "results": final_kept,
+                    "all_detections_with_status": all_processed
+                }, f, ensure_ascii=False, indent=2)
+
+            context.final_json_path = final_json_path
+            context.final_results = final_kept
+            print(f"[{self.name}] Dual Threshold Filter ({len(final_kept)} kept text regions) saved -> {final_json_path}")
             return context
 
-        # ── Step 1: Categorize into 3 Tiers ──
+        # ── Step 1: Categorize into 3 Tiers (CLIP Enabled) ──
         high_conf_items = []
         low_conf_items = []
         ambiguous_items = []
@@ -220,37 +282,51 @@ class CLIPFilterStage(BasePipelineStage):
 
         # ── Step 2: CLIP Re-checking for Ambiguous Items ──
         clip_evaluated_items = []
+        clip_inference_time = 0.0
+
         if ambiguous_items:
-            self._lazy_init(device)
-            
-            pil_images = []
-            valid_ambiguous = []
-            for item in ambiguous_items:
-                crop_path = item.get("crop_path", "")
-                pil_img = load_crop_as_pil(crop_path)
-                if pil_img is not None:
-                    pil_images.append(pil_img)
-                    valid_ambiguous.append(item)
-                else:
+            if not HAS_CLIP:
+                print(f"[{self.name}] WARNING: PyTorch/CLIP is unavailable in this venv.")
+                print(f"  Reason: {CLIP_IMPORT_ERROR}")
+                print(f"  Bypassing CLIP re-check: Auto-keeping {len(ambiguous_items)} ambiguous item(s).")
+                for item in ambiguous_items:
                     item_copy = dict(item)
-                    item_copy["pipeline_status"] = "REJECTED_BAD_IMAGE"
+                    item_copy["pipeline_status"] = "KEPT_NO_CLIP"
                     item_copy["clip_evaluated"] = False
-                    low_conf_items.append(item_copy)
-
-            if pil_images:
-                classifications = self.clip_filter.classify_batch(pil_images, batch_size=batch_size)
-                
-                for item, clf in zip(valid_ambiguous, classifications):
-                    item_copy = dict(item)
-                    item_copy["clip_evaluated"] = True
-                    item_copy["clip_classification"] = clf
-
-                    if clf["label"] == "non_text" and clf["confidence"] >= clip_nontext_thresh:
-                        item_copy["pipeline_status"] = "REJECTED_CLIP_NON_TEXT"
-                    else:
-                        item_copy["pipeline_status"] = "KEPT_CLIP_TEXT"
-
                     clip_evaluated_items.append(item_copy)
+            else:
+                self._lazy_init(device)
+                
+                pil_images = []
+                valid_ambiguous = []
+                for item in ambiguous_items:
+                    crop_path = item.get("crop_path", "")
+                    pil_img = load_crop_as_pil(crop_path)
+                    if pil_img is not None:
+                        pil_images.append(pil_img)
+                        valid_ambiguous.append(item)
+                    else:
+                        item_copy = dict(item)
+                        item_copy["pipeline_status"] = "REJECTED_BAD_IMAGE"
+                        item_copy["clip_evaluated"] = False
+                        low_conf_items.append(item_copy)
+
+                if pil_images:
+                    clip_start = time.time()
+                    classifications = self.clip_filter.classify_batch(pil_images, batch_size=batch_size)
+                    clip_inference_time = time.time() - clip_start
+                    
+                    for item, clf in zip(valid_ambiguous, classifications):
+                        item_copy = dict(item)
+                        item_copy["clip_evaluated"] = True
+                        item_copy["clip_classification"] = clf
+
+                        if clf["label"] == "non_text" and clf["confidence"] >= clip_nontext_thresh:
+                            item_copy["pipeline_status"] = "REJECTED_CLIP_NON_TEXT"
+                        else:
+                            item_copy["pipeline_status"] = "KEPT_CLIP_TEXT"
+
+                        clip_evaluated_items.append(item_copy)
 
         # ── Step 3: Merge and Produce Final Output ──
         all_processed = high_conf_items + low_conf_items + clip_evaluated_items

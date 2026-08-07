@@ -8,6 +8,13 @@ Refactored to implement BasePipelineStage for maximum modularity.
 import json
 import os
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+os.environ["FLAGS_use_mkldnn"] = "0"
+os.environ["FLAGS_enable_pir_api"] = "0"
+os.environ["FLAGS_enable_pir_in_executor"] = "0"
+try:
+    import torch
+except Exception:
+    pass
 import sys
 import time
 import glob
@@ -47,9 +54,12 @@ class PaddleDetStage(BasePipelineStage):
         if not HAS_PADDLEOCR:
             raise ImportError("paddleocr is not installed or TextDetection is unavailable.")
         
-        print(f"Initializing PaddleOCR TextDetection ({self.model_name}) on {self.device.upper()} (use_onnx={self.use_onnx})...")
-        # Initialize PaddleOCR detector instance
-        self.detector = TextDetection(model_name=self.model_name, device=self.device)
+        print(f"Initializing PaddleOCR TextDetection ({self.model_name}) on {self.device.upper()} (enable_mkldnn=False)...")
+        # Explicitly disable mkldnn in paddleocr args to avoid PIR static DoubleAttribute bug on Windows CPU
+        try:
+            self.detector = TextDetection(model_name=self.model_name, device=self.device, enable_mkldnn=False)
+        except Exception:
+            self.detector = TextDetection(model_name=self.model_name, device=self.device)
 
     @property
     def name(self) -> str:
