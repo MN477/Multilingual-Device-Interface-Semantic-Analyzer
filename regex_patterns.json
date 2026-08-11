@@ -1,0 +1,2894 @@
+{
+  "metadata": {
+    "description": "Comprehensive, multi-language regex pattern bank for static entity detection in device UI screenshots. Covers phone screens across all application types and car/vehicle HMI screens, with language coverage spanning Latin, Cyrillic, Greek, Arabic, Devanagari, Thai, and CJK scripts. Each pattern maps a structured text format to its entity type and provides a classification signal (system vs user text) plus a confidence score for downstream thresholding.",
+    "usage": "Load with json.load(), compile each regex with re.compile(pattern['regex'], re.IGNORECASE) where case_insensitive is true (else flags=0 — several non-Latin-script patterns are intentionally case_insensitive=false since case doesn't apply), then run re.search(compiled, text_block) on each OCR transcribed_text. Matched patterns provide entity_type and classification signal. 'confidence' is a static prior; combine with your OCR confidence and surrounding UI context (app category, screen region) for a final redaction decision. Patterns flagged in 'notes' as collision-prone should be weighted down or required to co-occur with a contextual anchor before acting on them.",
+    "coverage": [
+      "Phone: messaging, email, banking, ride-sharing, social media, navigation, music/media, shopping, food delivery, travel, health/fitness, weather, calendar, settings, phone/dialer, browser, camera, clock, calculator, notes, government/ID services, crypto wallets, security/2FA prompts",
+      "Car: dashboard, instrument cluster, navigation, infotainment, phone integration, climate control, ADAS/safety, tire pressure, OBD diagnostics, EV charging, drive mode/gear/cruise control, Android Auto, Apple CarPlay"
+    ],
+    "language_script_coverage": [
+      "Latin: English, Spanish, French, German, Italian, Portuguese, Dutch, Indonesian, Swedish, Danish, Polish, Czech, Turkish, Romanian, Hungarian, Vietnamese",
+      "Cyrillic: Russian, Ukrainian",
+      "Greek",
+      "Arabic",
+      "Devanagari: Hindi",
+      "Thai",
+      "CJK: Chinese (Simplified), Japanese, Korean"
+    ],
+    "total_categories": 30,
+    "total_patterns": 217
+  },
+  "categories": [
+    {
+      "category": "email",
+      "name": "Email Address",
+      "description": "Email addresses found in profile screens, contact lists, account settings, messaging apps, login forms. Format is language-agnostic (ASCII local-part is the overwhelming global norm; IDN/unicode domains are rare in UI screenshots).",
+      "patterns": [
+        {
+          "id": "email_standard",
+          "regex": "[a-zA-Z0-9._%+\\-]+@[a-zA-Z0-9.\\-]+\\.[a-zA-Z]{2,}",
+          "case_insensitive": false,
+          "description": "Standard email address format",
+          "examples": [
+            "appcrawler5@gmail.com",
+            "user.name+tag@domain.co.uk",
+            "john@company.com"
+          ],
+          "entity_type": "email_address",
+          "signal": "user"
+        },
+        {
+          "id": "email_obfuscated",
+          "regex": "[a-zA-Z0-9._%+\\-]+\\s*[\\[\\(]?\\s*(?:at|AT)\\s*[\\]\\)]?\\s*[a-zA-Z0-9.\\-]+\\s*[\\[\\(]?\\s*(?:dot|DOT)\\s*[\\]\\)]?\\s*[a-zA-Z]{2,}",
+          "case_insensitive": true,
+          "description": "Human-obfuscated email address as seen in bios/profiles ('name [at] domain [dot] com')",
+          "examples": [
+            "jane [at] gmail [dot] com",
+            "john(at)company(dot)com"
+          ],
+          "entity_type": "email_address",
+          "signal": "user",
+          "notes": "Common in social media bios to dodge scraper bots; still PII."
+        }
+      ]
+    },
+    {
+      "category": "phone",
+      "name": "Phone Number",
+      "description": "Phone numbers across formats: contacts, profile screens, ride-sharing, banking support, incoming calls on car screens. Includes E.164/international style plus common domestic groupings for major markets (US/CA, UK, France, Germany, Japan, and generic grouped-digit fallback).",
+      "patterns": [
+        {
+          "id": "phone_international",
+          "regex": "\\+\\d{1,3}[\\s\\-.]*\\(?\\d{1,4}\\)?[\\s\\-.]*\\d{1,4}[\\s\\-.]*\\d{1,9}",
+          "case_insensitive": false,
+          "description": "International phone number with + country code (covers US +1, EU +33/+44, Asia +81/+91, etc.)",
+          "examples": [
+            "+1-800-555-0199",
+            "+1 555 014 3821",
+            "+33 6 12 34 56 78",
+            "+44 20 7946 0958"
+          ],
+          "entity_type": "phone_number",
+          "signal": "user"
+        },
+        {
+          "id": "phone_us_parenthesized",
+          "regex": "\\(\\d{3}\\)[\\s\\-.]*\\d{3}[\\s\\-.]*\\d{4}",
+          "case_insensitive": false,
+          "description": "US/CA phone number with area code in parentheses",
+          "examples": [
+            "(415)579-1543",
+            "(212) 555-1234",
+            "(800) 123-4567"
+          ],
+          "entity_type": "phone_number",
+          "signal": "user"
+        },
+        {
+          "id": "phone_us_dashed",
+          "regex": "\\d{3}[\\-.]\\d{3}[\\-.]\\d{4}",
+          "case_insensitive": false,
+          "description": "US/CA phone number with dashes or dots (no parentheses)",
+          "examples": [
+            "415-579-1543",
+            "212.555.1234",
+            "800-123-4567"
+          ],
+          "entity_type": "phone_number",
+          "signal": "user"
+        },
+        {
+          "id": "phone_tollfree",
+          "regex": "(?:1[\\s\\-.]?)?(?:800|888|877|866|855|844|833)[\\s\\-.]?\\d{3}[\\s\\-.]?\\d{4}",
+          "case_insensitive": false,
+          "description": "US/CA toll-free numbers (800, 888, 877, etc.) — typically support lines",
+          "examples": [
+            "1-800-555-0199",
+            "888-123-4567",
+            "1.877.555.1234"
+          ],
+          "entity_type": "phone_tollfree",
+          "signal": "system",
+          "notes": "Toll-free numbers are typically system-provided support lines, not personal user data"
+        },
+        {
+          "id": "phone_uk_national",
+          "regex": "(?<!\\d)0\\d{2,4}[\\s\\-]?\\d{3,4}[\\s\\-]?\\d{3,4}(?!\\d)",
+          "case_insensitive": false,
+          "description": "UK domestic phone number (landline or mobile, leading trunk 0)",
+          "examples": [
+            "020 7946 0958",
+            "07911 123456",
+            "0161-496-0000"
+          ],
+          "entity_type": "phone_number",
+          "signal": "user"
+        },
+        {
+          "id": "phone_fr_national",
+          "regex": "(?<!\\d)0\\d(?:[\\s.\\-]?\\d{2}){4}(?!\\d)",
+          "case_insensitive": false,
+          "description": "French domestic phone number (10 digits in pairs, leading 0)",
+          "examples": [
+            "01 23 45 67 89",
+            "06.12.34.56.78",
+            "01-23-45-67-89"
+          ],
+          "entity_type": "phone_number",
+          "signal": "user"
+        },
+        {
+          "id": "phone_de_national",
+          "regex": "(?<!\\d)0\\d{2,5}[\\s/\\-]?\\d{3,8}(?!\\d)",
+          "case_insensitive": false,
+          "description": "German domestic phone number (area/mobile code + subscriber number)",
+          "examples": [
+            "0151 12345678",
+            "030/1234567",
+            "089-123456"
+          ],
+          "entity_type": "phone_number",
+          "signal": "user",
+          "notes": "Broad format range for DE numbering; can overlap with other grouped digits, context matters."
+        },
+        {
+          "id": "phone_jp_national",
+          "regex": "0\\d{1,4}-\\d{1,4}-\\d{3,4}",
+          "case_insensitive": false,
+          "description": "Japanese domestic phone number (mobile or landline, hyphenated)",
+          "examples": [
+            "090-1234-5678",
+            "03-1234-5678",
+            "0120-123-456"
+          ],
+          "entity_type": "phone_number",
+          "signal": "user"
+        },
+        {
+          "id": "phone_kr_national",
+          "regex": "0\\d{1,2}-\\d{3,4}-\\d{4}",
+          "case_insensitive": false,
+          "description": "South Korean domestic phone number (hyphenated)",
+          "examples": [
+            "010-1234-5678",
+            "02-123-4567"
+          ],
+          "entity_type": "phone_number",
+          "signal": "user"
+        },
+        {
+          "id": "phone_generic_grouped",
+          "regex": "(?<!\\d)\\d{2,4}(?:[\\s\\-]\\d{2,4}){2,4}(?!\\d)",
+          "case_insensitive": false,
+          "description": "Generic grouped-digit phone-like number, catch-all fallback for locales not covered above",
+          "examples": [
+            "21 4455 6677",
+            "555 123 4567",
+            "35 5566 7788"
+          ],
+          "entity_type": "phone_number",
+          "signal": "user",
+          "notes": "Low-confidence fallback; prone to collisions with other grouped numerics (order/ref numbers). Prefer a locale-specific match when available."
+        }
+      ]
+    },
+    {
+      "category": "time",
+      "name": "Time Display",
+      "description": "Time shown on status bars, clocks, navigation ETA, alarm apps, calendar events, car dashboard clocks. Numeric HH:MM is near-universal across locales; two informal written variants (French 'Xh Y', Japanese kanji) are added since they don't reduce to plain HH:MM.",
+      "patterns": [
+        {
+          "id": "time_12h_ampm",
+          "regex": "\\d{1,2}:\\d{2}\\s*(?:AM|PM|am|pm|a\\.m\\.|p\\.m\\.)",
+          "case_insensitive": false,
+          "description": "12-hour time with AM/PM marker",
+          "examples": [
+            "8:45 PM",
+            "8:59 PM",
+            "4:15 PM",
+            "12:00 AM",
+            "3:30 p.m."
+          ],
+          "entity_type": "time_12h",
+          "signal": "system"
+        },
+        {
+          "id": "time_24h",
+          "regex": "(?<![\\d:])(?:[01]?\\d|2[0-3]):[0-5]\\d(?![:\\d])",
+          "case_insensitive": false,
+          "description": "24-hour time display (also matches bare clock times like 8:43, 12:32, 14:22)",
+          "examples": [
+            "14:22",
+            "8:43",
+            "12:32",
+            "23:59",
+            "00:00"
+          ],
+          "entity_type": "time_24h",
+          "signal": "system",
+          "notes": "Lower confidence because bare HH:MM can also appear in durations or scores. When the entire text block is just this pattern, confidence is higher."
+        },
+        {
+          "id": "time_with_seconds",
+          "regex": "\\d{1,2}:\\d{2}:\\d{2}",
+          "case_insensitive": false,
+          "description": "Time with seconds (stopwatch, timer, video timestamp, detailed clock)",
+          "examples": [
+            "14:22:35",
+            "1:23:45",
+            "00:05:30"
+          ],
+          "entity_type": "time_with_seconds",
+          "signal": "system"
+        },
+        {
+          "id": "time_with_timezone",
+          "regex": "\\d{1,2}:\\d{2}\\s*(?:AM|PM)?\\s+(?:EST|CST|MST|PST|EDT|CDT|MDT|PDT|UTC|GMT|CET|CEST|JST|IST|AEST|NZST|BST|AST|HST|AKST|KST|HKT|SGT|WET|EET)",
+          "case_insensitive": false,
+          "description": "Time with timezone abbreviation",
+          "examples": [
+            "14:22 EST",
+            "8:45 PM PST",
+            "10:00 UTC",
+            "15:30 CET"
+          ],
+          "entity_type": "time_timezone",
+          "signal": "system"
+        },
+        {
+          "id": "time_fr_h_notation",
+          "regex": "(?<!\\d)\\d{1,2}\\s?[hH]\\s?\\d{0,2}(?!\\d)",
+          "case_insensitive": false,
+          "description": "French/Belgian informal 'Xh' or 'XhYY' time notation",
+          "examples": [
+            "14h30",
+            "8h05",
+            "9 h",
+            "23h"
+          ],
+          "entity_type": "time_24h",
+          "signal": "system",
+          "notes": "Can collide with height/other 'h' unit mentions; moderate confidence."
+        },
+        {
+          "id": "time_ja_kanji",
+          "regex": "\\d{1,2}時\\d{1,2}分",
+          "case_insensitive": false,
+          "description": "Japanese kanji time notation (HH時MM分)",
+          "examples": [
+            "14時22分",
+            "8時5分",
+            "23時59分"
+          ],
+          "entity_type": "time_24h",
+          "signal": "system"
+        },
+        {
+          "id": "time_zh_kanji",
+          "regex": "\\d{1,2}点\\d{1,2}分",
+          "case_insensitive": false,
+          "description": "Chinese time notation using 点/分 (HH点MM分)",
+          "examples": [
+            "下午2点30分",
+            "14点22分",
+            "8点5分"
+          ],
+          "entity_type": "time_24h",
+          "signal": "system"
+        }
+      ]
+    },
+    {
+      "category": "date",
+      "name": "Date Display",
+      "description": "Dates on receipts, transactions, calendar, messages, notifications, trip history, booking confirmations. Numeric formats are locale-agnostic; month-name and relative-date ('today/yesterday') formats are language-specific, so this category carries one pattern per major language/script cluster (Latin, Cyrillic, Greek, Arabic, Devanagari, CJK, Thai).",
+      "patterns": [
+        {
+          "id": "date_month_name_en",
+          "regex": "(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\\s+\\d{1,2}(?:st|nd|rd|th)?(?:\\s*,?\\s*\\d{4})?",
+          "case_insensitive": true,
+          "description": "English date, month first: 'Oct 24, 2026', 'July 29, 2026', 'Dec 3rd'",
+          "examples": [
+            "Oct 24, 2026",
+            "July 29, 2026",
+            "Dec 3rd",
+            "January 1, 2025",
+            "Sep 15"
+          ],
+          "entity_type": "date",
+          "signal": "system"
+        },
+        {
+          "id": "date_day_month_name_en",
+          "regex": "\\d{1,2}(?:st|nd|rd|th)?\\s+(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\\s*,?\\s*\\d{4}",
+          "case_insensitive": true,
+          "description": "English date, day first: '24 October 2026', '29th July 2026'",
+          "examples": [
+            "24 October 2026",
+            "29th July 2026",
+            "1 Jan 2025",
+            "15 Sep, 2026"
+          ],
+          "entity_type": "date",
+          "signal": "system"
+        },
+        {
+          "id": "date_month_name_es",
+          "regex": "\\d{1,2}\\s+de\\s+(?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)(?:\\s+de\\s+\\d{4})?",
+          "case_insensitive": true,
+          "description": "Spanish date, 'D de MES (de AAAA)'",
+          "examples": [
+            "24 de octubre de 2026",
+            "1 de enero",
+            "15 de julio de 2025"
+          ],
+          "entity_type": "date",
+          "signal": "system"
+        },
+        {
+          "id": "date_month_name_fr",
+          "regex": "\\d{1,2}\\s?(?:er)?\\s+(?:janvier|février|fevrier|mars|avril|mai|juin|juillet|août|aout|septembre|octobre|novembre|décembre|decembre)(?:\\s+\\d{4})?",
+          "case_insensitive": true,
+          "description": "French date, 'D MOIS (AAAA)'",
+          "examples": [
+            "24 octobre 2026",
+            "1er janvier 2026",
+            "15 juillet"
+          ],
+          "entity_type": "date",
+          "signal": "system"
+        },
+        {
+          "id": "date_month_name_de",
+          "regex": "\\d{1,2}\\.\\s?(?:Januar|Februar|März|Maerz|April|Mai|Juni|Juli|August|September|Oktober|November|Dezember)(?:\\s+\\d{4})?",
+          "case_insensitive": false,
+          "description": "German date, 'D. MONAT (JJJJ)' — note the period after the day number",
+          "examples": [
+            "24. Oktober 2026",
+            "1. Januar 2026",
+            "15. Juli"
+          ],
+          "entity_type": "date",
+          "signal": "system"
+        },
+        {
+          "id": "date_month_name_it",
+          "regex": "\\d{1,2}\\s+(?:gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)(?:\\s+\\d{4})?",
+          "case_insensitive": true,
+          "description": "Italian date, 'D MESE (AAAA)'",
+          "examples": [
+            "24 ottobre 2026",
+            "1 gennaio 2026",
+            "15 luglio"
+          ],
+          "entity_type": "date",
+          "signal": "system"
+        },
+        {
+          "id": "date_month_name_pt",
+          "regex": "\\d{1,2}\\s+de\\s+(?:janeiro|fevereiro|março|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)(?:\\s+de\\s+\\d{4})?",
+          "case_insensitive": true,
+          "description": "Portuguese date, 'D de MÊS (de AAAA)'",
+          "examples": [
+            "24 de outubro de 2026",
+            "1 de janeiro",
+            "15 de julho de 2025"
+          ],
+          "entity_type": "date",
+          "signal": "system"
+        },
+        {
+          "id": "date_month_name_nl",
+          "regex": "\\d{1,2}\\s+(?:januari|februari|maart|april|mei|juni|juli|augustus|september|oktober|november|december)(?:\\s+\\d{4})?",
+          "case_insensitive": true,
+          "description": "Dutch date, 'D MAAND (JJJJ)'",
+          "examples": [
+            "24 oktober 2026",
+            "1 januari 2026",
+            "15 juli"
+          ],
+          "entity_type": "date",
+          "signal": "system"
+        },
+        {
+          "id": "date_month_name_id",
+          "regex": "\\d{1,2}\\s+(?:Januari|Februari|Maret|April|Mei|Juni|Juli|Agustus|September|Oktober|November|Desember)(?:\\s+\\d{4})?",
+          "case_insensitive": true,
+          "description": "Indonesian date, 'D Bulan Tahun'",
+          "examples": [
+            "24 Oktober 2026",
+            "1 Januari 2026"
+          ],
+          "entity_type": "date",
+          "signal": "system"
+        },
+        {
+          "id": "date_month_name_sv",
+          "regex": "\\d{1,2}\\s+(?:januari|februari|mars|april|maj|juni|juli|augusti|september|oktober|november|december)(?:\\s+\\d{4})?",
+          "case_insensitive": true,
+          "description": "Swedish date, 'D MÅNAD (ÅÅÅÅ)' — spelling largely shared with Norwegian Bokmål",
+          "examples": [
+            "24 oktober 2026",
+            "1 maj 2026"
+          ],
+          "entity_type": "date",
+          "signal": "system",
+          "notes": "Norwegian Bokmål month names are near-identical; this pattern also catches most Norwegian dates."
+        },
+        {
+          "id": "date_month_name_da",
+          "regex": "\\d{1,2}\\.\\s?(?:januar|februar|marts|april|maj|juni|juli|august|september|oktober|november|december)(?:\\s+\\d{4})?",
+          "case_insensitive": true,
+          "description": "Danish date, 'D. MÅNED (ÅÅÅÅ)'",
+          "examples": [
+            "24. oktober 2026",
+            "1. maj 2026"
+          ],
+          "entity_type": "date",
+          "signal": "system"
+        },
+        {
+          "id": "date_month_name_pl",
+          "regex": "\\d{1,2}\\s+(?:stycznia|lutego|marca|kwietnia|maja|czerwca|lipca|sierpnia|września|wrzesnia|października|pazdziernika|listopada|grudnia)(?:\\s+\\d{4})?",
+          "case_insensitive": true,
+          "description": "Polish date, genitive month form: 'D MIESIĄCA (RRRR)'",
+          "examples": [
+            "24 października 2026",
+            "1 stycznia 2026"
+          ],
+          "entity_type": "date",
+          "signal": "system"
+        },
+        {
+          "id": "date_month_name_cs",
+          "regex": "\\d{1,2}\\.\\s?(?:ledna|února|unora|března|brezna|dubna|května|kvetna|června|cervna|července|cervence|srpna|září|zari|října|rijna|listopadu|prosince)(?:\\s+\\d{4})?",
+          "case_insensitive": true,
+          "description": "Czech date, genitive month form: 'D. MĚSÍCE ROK'",
+          "examples": [
+            "24. října 2026",
+            "1. ledna 2026"
+          ],
+          "entity_type": "date",
+          "signal": "system"
+        },
+        {
+          "id": "date_month_name_tr",
+          "regex": "\\d{1,2}\\s+(?:Ocak|Şubat|Subat|Mart|Nisan|Mayıs|Mayis|Haziran|Temmuz|Ağustos|Agustos|Eylül|Eylul|Ekim|Kasım|Kasim|Aralık|Aralik)(?:\\s+\\d{4})?",
+          "case_insensitive": true,
+          "description": "Turkish date, 'D AY YYYY'",
+          "examples": [
+            "24 Ekim 2026",
+            "1 Ocak 2026"
+          ],
+          "entity_type": "date",
+          "signal": "system"
+        },
+        {
+          "id": "date_month_name_ro",
+          "regex": "\\d{1,2}\\s+(?:ianuarie|februarie|martie|aprilie|mai|iunie|iulie|august|septembrie|octombrie|noiembrie|decembrie)(?:\\s+\\d{4})?",
+          "case_insensitive": true,
+          "description": "Romanian date, 'D LUNA (AAAA)'",
+          "examples": [
+            "24 octombrie 2026",
+            "1 ianuarie 2026"
+          ],
+          "entity_type": "date",
+          "signal": "system"
+        },
+        {
+          "id": "date_month_name_hu",
+          "regex": "\\d{4}\\.?\\s?(?:január|február|március|április|május|június|július|augusztus|szeptember|október|november|december)\\s+\\d{1,2}",
+          "case_insensitive": true,
+          "description": "Hungarian date, year-first: 'ÉÉÉÉ. hónap N.'",
+          "examples": [
+            "2026. október 24",
+            "2026 augusztus 1"
+          ],
+          "entity_type": "date",
+          "signal": "system",
+          "notes": "Hungarian uniquely orders year-month-day; pattern reflects that."
+        },
+        {
+          "id": "date_month_name_ru",
+          "regex": "\\d{1,2}\\s+(?:января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)(?:\\s+\\d{4})?",
+          "case_insensitive": false,
+          "description": "Russian date, genitive month form (Cyrillic): 'D МЕСЯЦА (ГГГГ)'",
+          "examples": [
+            "24 октября 2026",
+            "1 января 2026"
+          ],
+          "entity_type": "date",
+          "signal": "system"
+        },
+        {
+          "id": "date_month_name_uk",
+          "regex": "\\d{1,2}\\s+(?:січня|лютого|березня|квітня|травня|червня|липня|серпня|вересня|жовтня|листопада|грудня)(?:\\s+\\d{4})?",
+          "case_insensitive": false,
+          "description": "Ukrainian date, genitive month form (Cyrillic)",
+          "examples": [
+            "24 жовтня 2026",
+            "1 січня 2026"
+          ],
+          "entity_type": "date",
+          "signal": "system"
+        },
+        {
+          "id": "date_month_name_el",
+          "regex": "\\d{1,2}\\s+(?:Ιανουαρίου|Φεβρουαρίου|Μαρτίου|Απριλίου|Μαΐου|Ιουνίου|Ιουλίου|Αυγούστου|Σεπτεμβρίου|Οκτωβρίου|Νοεμβρίου|Δεκεμβρίου)(?:\\s+\\d{4})?",
+          "case_insensitive": false,
+          "description": "Greek date, genitive month form",
+          "examples": [
+            "24 Οκτωβρίου 2026",
+            "1 Ιανουαρίου 2026"
+          ],
+          "entity_type": "date",
+          "signal": "system"
+        },
+        {
+          "id": "date_month_name_ar",
+          "regex": "\\d{1,2}\\s+(?:يناير|فبراير|مارس|إبريل|أبريل|مايو|يونيو|يوليو|أغسطس|سبتمبر|أكتوبر|نوفمبر|ديسمبر)(?:\\s+\\d{4})?",
+          "case_insensitive": false,
+          "description": "Arabic date, Gregorian month names",
+          "examples": [
+            "24 أكتوبر 2026",
+            "1 يناير 2026"
+          ],
+          "entity_type": "date",
+          "signal": "system"
+        },
+        {
+          "id": "date_month_name_hi",
+          "regex": "\\d{1,2}\\s+(?:जनवरी|फ़रवरी|फरवरी|मार्च|अप्रैल|मई|जून|जुलाई|अगस्त|सितंबर|अक्तूबर|अक्टूबर|नवंबर|दिसंबर)(?:\\s+\\d{4})?",
+          "case_insensitive": false,
+          "description": "Hindi date, Devanagari month names",
+          "examples": [
+            "24 अक्टूबर 2026",
+            "1 जनवरी 2026"
+          ],
+          "entity_type": "date",
+          "signal": "system"
+        },
+        {
+          "id": "date_month_name_th",
+          "regex": "\\d{1,2}\\s+(?:มกราคม|กุมภาพันธ์|มีนาคม|เมษายน|พฤษภาคม|มิถุนายน|กรกฎาคม|สิงหาคม|กันยายน|ตุลาคม|พฤศจิกายน|ธันวาคม)(?:\\s?\\d{4})?",
+          "case_insensitive": false,
+          "description": "Thai date, Thai month names (year often given in Buddhist Era, +543 vs Gregorian)",
+          "examples": [
+            "24 ตุลาคม 2569",
+            "1 มกราคม 2026"
+          ],
+          "entity_type": "date",
+          "signal": "system"
+        },
+        {
+          "id": "date_month_name_vi",
+          "regex": "(?:ngày\\s+)?\\d{1,2}\\s+tháng\\s+\\d{1,2}(?:\\s+năm\\s+\\d{4})?",
+          "case_insensitive": true,
+          "description": "Vietnamese date, 'ngày D tháng M năm YYYY'",
+          "examples": [
+            "ngày 24 tháng 10 năm 2026",
+            "1 tháng 1 năm 2026"
+          ],
+          "entity_type": "date",
+          "signal": "system"
+        },
+        {
+          "id": "date_cjk_ymd",
+          "regex": "\\d{4}年\\d{1,2}月\\d{1,2}日",
+          "case_insensitive": false,
+          "description": "Chinese/Japanese numeric date using 年/月/日 (YYYY年M月D日)",
+          "examples": [
+            "2026年7月31日",
+            "2025年1月1日"
+          ],
+          "entity_type": "date",
+          "signal": "system"
+        },
+        {
+          "id": "date_ko_ymd",
+          "regex": "\\d{4}년\\s?\\d{1,2}월\\s?\\d{1,2}일",
+          "case_insensitive": false,
+          "description": "Korean numeric date using 년/월/일",
+          "examples": [
+            "2026년 7월 31일",
+            "2025년1월1일"
+          ],
+          "entity_type": "date",
+          "signal": "system"
+        },
+        {
+          "id": "date_numeric_slash",
+          "regex": "\\d{1,2}/\\d{1,2}/\\d{2,4}",
+          "case_insensitive": false,
+          "description": "Numeric date with slashes (MM/DD/YYYY or DD/MM/YYYY)",
+          "examples": [
+            "07/31/2026",
+            "31/07/2026",
+            "12/25/26",
+            "1/5/2026"
+          ],
+          "entity_type": "date",
+          "signal": "system"
+        },
+        {
+          "id": "date_iso",
+          "regex": "\\d{4}-\\d{2}-\\d{2}",
+          "case_insensitive": false,
+          "description": "ISO 8601 date format YYYY-MM-DD",
+          "examples": [
+            "2026-07-31",
+            "2025-01-15",
+            "2026-12-25"
+          ],
+          "entity_type": "date",
+          "signal": "system"
+        },
+        {
+          "id": "date_numeric_dot",
+          "regex": "\\d{1,2}\\.\\d{1,2}\\.\\d{2,4}",
+          "case_insensitive": false,
+          "description": "Date with dots (common in EU/DE/RU: DD.MM.YYYY)",
+          "examples": [
+            "31.07.2026",
+            "15.01.2025",
+            "25.12.26"
+          ],
+          "entity_type": "date",
+          "signal": "system",
+          "notes": "Can conflict with version numbers or IP fragments. Context matters."
+        },
+        {
+          "id": "date_day_of_week_en",
+          "regex": "\\b(?:Mon(?:day)?|Tue(?:sday)?|Wed(?:nesday)?|Thu(?:rsday)?|Fri(?:day)?|Sat(?:urday)?|Sun(?:day)?)\\b(?:\\s*,?\\s*(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\\s+\\d{1,2})?",
+          "case_insensitive": true,
+          "description": "English day of week, optionally with date (calendar, schedule, notifications)",
+          "examples": [
+            "Monday",
+            "Tue, Oct 24",
+            "Friday, July 29",
+            "Wed",
+            "Sun, Dec 25"
+          ],
+          "entity_type": "date_weekday",
+          "signal": "system"
+        },
+        {
+          "id": "date_day_of_week_multilang",
+          "regex": "(?:lunes|martes|miércoles|miercoles|jueves|viernes|sábado|sabado|domingo|lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche|Montag|Dienstag|Mittwoch|Donnerstag|Freitag|Samstag|Sonntag|lunedì|martedì|mercoledì|giovedì|venerdì|sabato|domenica|segunda-feira|terça-feira|quarta-feira|quinta-feira|sexta-feira|sábado|domingo|maandag|dinsdag|woensdag|donderdag|vrijdag|zaterdag|zondag)",
+          "case_insensitive": true,
+          "description": "Day of week name across Spanish/French/German/Italian/Portuguese/Dutch",
+          "examples": [
+            "lunes",
+            "mercredi",
+            "Donnerstag",
+            "venerdì",
+            "domingo",
+            "zaterdag"
+          ],
+          "entity_type": "date_weekday",
+          "signal": "system"
+        },
+        {
+          "id": "date_day_of_week_ru",
+          "regex": "(?:понедельник|вторник|среда|четверг|пятница|суббота|воскресенье)",
+          "case_insensitive": false,
+          "description": "Day of week name, Russian (Cyrillic)",
+          "examples": [
+            "понедельник",
+            "пятница",
+            "воскресенье"
+          ],
+          "entity_type": "date_weekday",
+          "signal": "system"
+        },
+        {
+          "id": "date_relative_multilang",
+          "regex": "(?:Today|Yesterday|Tomorrow|\\d+\\s+(?:min(?:ute)?s?|hours?|days?|weeks?|months?)\\s+ago|Just now|Last\\s+(?:week|month|year)|This\\s+(?:week|month|year)|Hoy|Ayer|Mañana|Manana|hace\\s+\\d+\\s+(?:segundos?|minutos?|horas?|d[ií]as?|semanas?|meses?)|ahora mismo|Aujourd'hui|Hier|Demain|il y a\\s+\\d+\\s+(?:secondes?|minutes?|heures?|jours?|semaines?|mois)|à l'instant|Heute|Gestern|Morgen|vor\\s+\\d+\\s+(?:Sekunden|Minuten|Stunden|Tagen|Wochen|Monaten)|gerade eben|Oggi|Ieri|Domani|\\d+\\s+(?:secondi|minuti|ore|giorni)\\s+fa|proprio ora|Hoje|Ontem|Amanhã|Amanha|há\\s+\\d+\\s+(?:segundos?|minutos?|horas?|dias?)|agora mesmo|Vandaag|Gisteren|\\d+\\s+(?:seconden|minuten|uur|dagen)\\s+geleden|zojuist|Сегодня|Вчера|Завтра|\\d+\\s+(?:секунд|минут|часов|дней)\\s+назад|только что|今日|昨日|明日|\\d+分前|\\d+時間前|たった今|今天|昨天|明天|\\d+分钟前|\\d+小时前|刚刚|오늘|어제|내일|\\d+분\\s*전|\\d+시간\\s*전|방금)",
+          "case_insensitive": true,
+          "description": "Relative date/time expressions across major languages, used in notifications, messages, social feeds",
+          "examples": [
+            "Today",
+            "hace 2 horas",
+            "il y a 5 minutes",
+            "vor 3 Tagen",
+            "2 hours ago",
+            "昨天",
+            "방금"
+          ],
+          "entity_type": "date_relative",
+          "signal": "system",
+          "notes": "Combines bare today/yesterday/tomorrow terms with each language's own '...ago'/'just now' construction rather than assuming English syntax; some overlap risk with unrelated short words is mitigated by requiring the full token."
+        }
+      ]
+    },
+    {
+      "category": "duration",
+      "name": "Time Duration",
+      "description": "Duration displays in navigation ETA, call length, music playback, workout timers, cooking apps, download estimates. English patterns kept granular by unit; other languages combined per-language since unit words are short and collide less.",
+      "patterns": [
+        {
+          "id": "duration_minutes",
+          "regex": "\\d+\\s*(?:min(?:ute)?s?|mins?)",
+          "case_insensitive": true,
+          "description": "Duration in minutes (English)",
+          "examples": [
+            "16 min",
+            "5 minutes",
+            "30 mins",
+            "2 min"
+          ],
+          "entity_type": "duration",
+          "signal": "system"
+        },
+        {
+          "id": "duration_hours",
+          "regex": "\\d+\\s*(?:hr?s?|hours?)",
+          "case_insensitive": true,
+          "description": "Duration in hours (English)",
+          "examples": [
+            "2 hrs",
+            "1 hour",
+            "3 h",
+            "24 hours"
+          ],
+          "entity_type": "duration",
+          "signal": "system"
+        },
+        {
+          "id": "duration_hours_minutes",
+          "regex": "\\d+\\s*(?:h(?:rs?|ours?)?)[\\s,]*\\d+\\s*(?:m(?:in(?:ute)?s?)?)",
+          "case_insensitive": true,
+          "description": "Combined hours and minutes duration (English)",
+          "examples": [
+            "2h 30m",
+            "1 hour 15 min",
+            "3 hrs, 45 mins",
+            "1h 5min"
+          ],
+          "entity_type": "duration",
+          "signal": "system"
+        },
+        {
+          "id": "duration_seconds",
+          "regex": "\\d+\\s*(?:sec(?:ond)?s?)",
+          "case_insensitive": true,
+          "description": "Duration in seconds (timers, loading, short durations)",
+          "examples": [
+            "30 seconds",
+            "5 sec",
+            "45 secs",
+            "10 second"
+          ],
+          "entity_type": "duration",
+          "signal": "system"
+        },
+        {
+          "id": "duration_days",
+          "regex": "\\d+\\s*(?:days?)",
+          "case_insensitive": true,
+          "description": "Duration in days (delivery estimates, countdowns, subscriptions)",
+          "examples": [
+            "3 days",
+            "1 day",
+            "14 days",
+            "30 day"
+          ],
+          "entity_type": "duration",
+          "signal": "system"
+        },
+        {
+          "id": "duration_es",
+          "regex": "\\d+\\s*(?:seg(?:undos?)?|min(?:utos?)?|h(?:oras?)?|d[ií]as?)",
+          "case_insensitive": true,
+          "description": "Duration unit, Spanish (seconds/minutes/hours/days)",
+          "examples": [
+            "30 segundos",
+            "5 min",
+            "2 horas",
+            "3 días"
+          ],
+          "entity_type": "duration",
+          "signal": "system"
+        },
+        {
+          "id": "duration_fr",
+          "regex": "\\d+\\s*(?:sec(?:ondes?)?|min(?:utes?)?|h(?:eures?)?|jours?)",
+          "case_insensitive": true,
+          "description": "Duration unit, French",
+          "examples": [
+            "30 secondes",
+            "5 min",
+            "2 heures",
+            "3 jours"
+          ],
+          "entity_type": "duration",
+          "signal": "system"
+        },
+        {
+          "id": "duration_de",
+          "regex": "\\d+\\s*(?:Sek(?:unden)?|Min(?:uten)?|Std\\.?|Stunden?|Tage?)",
+          "case_insensitive": false,
+          "description": "Duration unit, German",
+          "examples": [
+            "30 Sekunden",
+            "5 Min",
+            "2 Stunden",
+            "3 Tage"
+          ],
+          "entity_type": "duration",
+          "signal": "system"
+        },
+        {
+          "id": "duration_it",
+          "regex": "\\d+\\s*(?:sec(?:ondi)?|min(?:uti)?|or[ae]|giorni?)",
+          "case_insensitive": true,
+          "description": "Duration unit, Italian",
+          "examples": [
+            "30 secondi",
+            "5 min",
+            "2 ore",
+            "3 giorni"
+          ],
+          "entity_type": "duration",
+          "signal": "system",
+          "notes": "'ora/ore' can collide with unrelated short words; combined with a leading digit to reduce false positives."
+        },
+        {
+          "id": "duration_pt",
+          "regex": "\\d+\\s*(?:seg(?:undos?)?|min(?:utos?)?|h(?:oras?)?|dias?)",
+          "case_insensitive": true,
+          "description": "Duration unit, Portuguese",
+          "examples": [
+            "30 segundos",
+            "5 min",
+            "2 horas",
+            "3 dias"
+          ],
+          "entity_type": "duration",
+          "signal": "system"
+        },
+        {
+          "id": "duration_nl",
+          "regex": "\\d+\\s*(?:sec(?:onden)?|min(?:uten)?|uur|uren|dagen?)",
+          "case_insensitive": true,
+          "description": "Duration unit, Dutch",
+          "examples": [
+            "30 seconden",
+            "5 min",
+            "2 uur",
+            "3 dagen"
+          ],
+          "entity_type": "duration",
+          "signal": "system"
+        },
+        {
+          "id": "duration_ru",
+          "regex": "\\d+\\s*(?:сек(?:унд[а-я]*)?|мин(?:ут[а-я]*)?|час(?:ов|а)?|д(?:ень|ня|ней))",
+          "case_insensitive": false,
+          "description": "Duration unit, Russian (handles common case endings)",
+          "examples": [
+            "30 секунд",
+            "5 мин",
+            "2 часа",
+            "3 дня"
+          ],
+          "entity_type": "duration",
+          "signal": "system"
+        },
+        {
+          "id": "duration_tr",
+          "regex": "\\d+\\s*(?:saniye|dakika|saat|gün)",
+          "case_insensitive": true,
+          "description": "Duration unit, Turkish",
+          "examples": [
+            "30 saniye",
+            "5 dakika",
+            "2 saat",
+            "3 gün"
+          ],
+          "entity_type": "duration",
+          "signal": "system"
+        },
+        {
+          "id": "duration_ar",
+          "regex": "\\d+\\s*(?:ثانية|ثوان|دقيقة|دقائق|ساعة|ساعات|يوم|أيام)",
+          "case_insensitive": false,
+          "description": "Duration unit, Arabic",
+          "examples": [
+            "30 ثانية",
+            "5 دقائق",
+            "2 ساعة",
+            "3 أيام"
+          ],
+          "entity_type": "duration",
+          "signal": "system"
+        },
+        {
+          "id": "duration_hi",
+          "regex": "\\d+\\s*(?:सेकंड|मिनट|घंटे|घंटा|दिन)",
+          "case_insensitive": false,
+          "description": "Duration unit, Hindi",
+          "examples": [
+            "30 सेकंड",
+            "5 मिनट",
+            "2 घंटे",
+            "3 दिन"
+          ],
+          "entity_type": "duration",
+          "signal": "system"
+        },
+        {
+          "id": "duration_cjk",
+          "regex": "\\d+\\s*(?:秒|分钟|分|小时|時間|日|天)",
+          "case_insensitive": false,
+          "description": "Duration unit, Chinese/Japanese (shared CJK characters for sec/min/hour/day)",
+          "examples": [
+            "30秒",
+            "5分钟",
+            "2時間",
+            "3天"
+          ],
+          "entity_type": "duration",
+          "signal": "system",
+          "notes": "Single characters like 分/日 are short and can appear in unrelated compounds; digit-adjacency required to reduce noise."
+        },
+        {
+          "id": "duration_ko",
+          "regex": "\\d+\\s*(?:초|분|시간|일)",
+          "case_insensitive": false,
+          "description": "Duration unit, Korean",
+          "examples": [
+            "30초",
+            "5분",
+            "2시간",
+            "3일"
+          ],
+          "entity_type": "duration",
+          "signal": "system",
+          "notes": "Single-syllable units are short; digit-adjacency required to reduce noise."
+        }
+      ]
+    },
+    {
+      "category": "currency",
+      "name": "Currency / Money Amount",
+      "description": "Monetary values in banking apps, shopping, ride-sharing receipts, food delivery, payment confirmations, pricing, tipping. Covers symbol-prefixed, symbol-suffixed (common in EU formatting), and ISO-code forms.",
+      "patterns": [
+        {
+          "id": "currency_dollar",
+          "regex": "\\$\\s?\\d{1,3}(?:,\\d{3})*(?:\\.\\d{1,2})?",
+          "case_insensitive": false,
+          "description": "Dollar amount with $ symbol (USD, CAD, AUD, etc.)",
+          "examples": [
+            "$34.50",
+            "$120.00",
+            "$1,234.56",
+            "$5",
+            "$0.99"
+          ],
+          "entity_type": "money",
+          "signal": "user"
+        },
+        {
+          "id": "currency_euro",
+          "regex": "€\\s?\\d{1,3}(?:[.,]\\d{3})*(?:[.,]\\d{1,2})?",
+          "case_insensitive": false,
+          "description": "Euro amount with € symbol, prefix position",
+          "examples": [
+            "€12.99",
+            "€1.234,56",
+            "€100",
+            "€0,99"
+          ],
+          "entity_type": "money",
+          "signal": "user"
+        },
+        {
+          "id": "currency_euro_suffix",
+          "regex": "\\d{1,3}(?:[.,]\\d{3})*(?:[.,]\\d{1,2})?\\s?€",
+          "case_insensitive": false,
+          "description": "Euro amount with € symbol, suffix position (common in DE/FR/IT/ES/NL receipts)",
+          "examples": [
+            "12,99 €",
+            "1.234,56€",
+            "100 €"
+          ],
+          "entity_type": "money",
+          "signal": "user"
+        },
+        {
+          "id": "currency_pound",
+          "regex": "£\\s?\\d{1,3}(?:,\\d{3})*(?:\\.\\d{1,2})?",
+          "case_insensitive": false,
+          "description": "British pound amount with £ symbol",
+          "examples": [
+            "£100",
+            "£24.99",
+            "£1,500.00"
+          ],
+          "entity_type": "money",
+          "signal": "user"
+        },
+        {
+          "id": "currency_yen_yuan",
+          "regex": "[¥￥]\\s?\\d{1,3}(?:,\\d{3})*(?:\\.\\d{1,2})?",
+          "case_insensitive": false,
+          "description": "Japanese Yen or Chinese Yuan with ¥ symbol",
+          "examples": [
+            "¥1,200",
+            "¥99.00",
+            "￥500"
+          ],
+          "entity_type": "money",
+          "signal": "user"
+        },
+        {
+          "id": "currency_rupee",
+          "regex": "₹\\s?\\d{1,2}(?:,\\d{2})*(?:,\\d{3})?(?:\\.\\d{1,2})?",
+          "case_insensitive": false,
+          "description": "Indian Rupee with ₹ symbol (uses lakh/crore grouping)",
+          "examples": [
+            "₹500",
+            "₹1,23,456",
+            "₹99.50",
+            "₹12,500.00"
+          ],
+          "entity_type": "money",
+          "signal": "user"
+        },
+        {
+          "id": "currency_with_code",
+          "regex": "\\d{1,3}(?:,\\d{3})*(?:\\.\\d{1,2})?\\s*(?:USD|EUR|GBP|JPY|CAD|AUD|CHF|CNY|INR|BRL|KRW|RUB|MXN|SEK|NOK|DKK|PLN|CZK|HUF|TRY|ZAR|SAR|AED|QAR|KWD|BHD|OMR|NZD|SGD|HKD|TWD|THB|PHP|IDR|MYR|VND|EGP|NGN|KES|GHS|MAD|TND|DZD)",
+          "case_insensitive": false,
+          "description": "Amount followed by ISO 4217 currency code",
+          "examples": [
+            "120.00 USD",
+            "50.00 EUR",
+            "1500 JPY",
+            "250.00 GBP",
+            "99.99 CAD"
+          ],
+          "entity_type": "money",
+          "signal": "user"
+        },
+        {
+          "id": "currency_generic_symbol_prefix",
+          "regex": "[₩₱₫₴₸₺₼₽]\\s?\\d{1,3}(?:[.,]\\d{3})*(?:[.,]\\d{1,2})?",
+          "case_insensitive": false,
+          "description": "Other currency symbols (Won, Peso, Dong, Hryvnia, Tenge, Lira, Manat, Ruble)",
+          "examples": [
+            "₩15000",
+            "₺99.90",
+            "₽1500",
+            "₴250.00"
+          ],
+          "entity_type": "money",
+          "signal": "user"
+        },
+        {
+          "id": "currency_word_multilang",
+          "regex": "\\d{1,3}(?:[.,]\\d{3})*(?:[.,]\\d{1,2})?\\s*(?:dollars?|euros?|pesos?|reais|real|francs?|Franken|zloty|złotych|forint|lei|kronor|kroner|Rupiah|ringgit|baht|dong|yuan|won)",
+          "case_insensitive": true,
+          "description": "Amount followed by a spelled-out currency name",
+          "examples": [
+            "100 dollars",
+            "50 euros",
+            "200 pesos",
+            "1500 baht"
+          ],
+          "entity_type": "money",
+          "signal": "user",
+          "notes": "Spelled-out currency words are more collision-prone than symbols/codes; treat as supporting evidence."
+        }
+      ]
+    },
+    {
+      "category": "distance",
+      "name": "Distance Measurement",
+      "description": "Distance values on navigation screens, ride-sharing apps, maps, fitness trackers, car dashboards, delivery apps. Unit abbreviations (km, mi, m, ft, yd, cm) are used near-universally in UI even on localized apps, so no separate per-language variants are needed beyond the addition of centimeters for close-range sensors.",
+      "patterns": [
+        {
+          "id": "distance_km",
+          "regex": "\\d+(?:\\.\\d+)?\\s*(?:km|kilometers?|kilometres?)",
+          "case_insensitive": true,
+          "description": "Distance in kilometers",
+          "examples": [
+            "14 km",
+            "19 km",
+            "2.5 km",
+            "100 kilometers"
+          ],
+          "entity_type": "distance",
+          "signal": "system"
+        },
+        {
+          "id": "distance_miles",
+          "regex": "\\d+(?:\\.\\d+)?\\s*(?:miles?|mi(?!n))",
+          "case_insensitive": true,
+          "description": "Distance in miles (negative lookahead prevents matching 'min')",
+          "examples": [
+            "18.4 miles",
+            "5 mi",
+            "0.3 miles",
+            "250 miles"
+          ],
+          "entity_type": "distance",
+          "signal": "system"
+        },
+        {
+          "id": "distance_meters",
+          "regex": "\\d+(?:\\.\\d+)?\\s*(?:meters?|metres?)",
+          "case_insensitive": true,
+          "description": "Distance in meters (spelled out to avoid single 'm' false positives)",
+          "examples": [
+            "200 meters",
+            "500 metres",
+            "50 meter"
+          ],
+          "entity_type": "distance",
+          "signal": "system"
+        },
+        {
+          "id": "distance_centimeters",
+          "regex": "\\d+(?:\\.\\d+)?\\s*cm(?![a-zA-Z])",
+          "case_insensitive": false,
+          "description": "Distance in centimeters (parking sensors, close-range car proximity displays)",
+          "examples": [
+            "45 cm",
+            "120 cm",
+            "8.5 cm"
+          ],
+          "entity_type": "distance",
+          "signal": "system"
+        },
+        {
+          "id": "distance_feet",
+          "regex": "\\d+(?:\\.\\d+)?\\s*(?:ft|feet)",
+          "case_insensitive": true,
+          "description": "Distance in feet",
+          "examples": [
+            "500 ft",
+            "1000 feet",
+            "2.5 ft"
+          ],
+          "entity_type": "distance",
+          "signal": "system"
+        },
+        {
+          "id": "distance_yards",
+          "regex": "\\d+(?:\\.\\d+)?\\s*(?:yd|yards?)",
+          "case_insensitive": true,
+          "description": "Distance in yards",
+          "examples": [
+            "100 yards",
+            "50 yd",
+            "200 yard"
+          ],
+          "entity_type": "distance",
+          "signal": "system"
+        }
+      ]
+    },
+    {
+      "category": "speed",
+      "name": "Speed Measurement",
+      "description": "Speed displays on car dashboards, navigation screens, speedometers, fitness tracking (running pace).",
+      "patterns": [
+        {
+          "id": "speed_mph",
+          "regex": "\\d+(?:\\.\\d+)?\\s*(?:mph|MPH|mp/h)",
+          "case_insensitive": false,
+          "description": "Speed in miles per hour",
+          "examples": [
+            "65 MPH",
+            "35 mph",
+            "120 MPH"
+          ],
+          "entity_type": "speed",
+          "signal": "system"
+        },
+        {
+          "id": "speed_kmh",
+          "regex": "\\d+(?:\\.\\d+)?\\s*(?:km/h|kmh|kph|KPH|km\\.h)",
+          "case_insensitive": true,
+          "description": "Speed in kilometers per hour",
+          "examples": [
+            "120 km/h",
+            "80 kph",
+            "60 kmh",
+            "100 KPH"
+          ],
+          "entity_type": "speed",
+          "signal": "system"
+        },
+        {
+          "id": "speed_knots",
+          "regex": "\\d+(?:\\.\\d+)?\\s*(?:knots?|kts?|kn)",
+          "case_insensitive": true,
+          "description": "Speed in knots (marine/aviation apps)",
+          "examples": [
+            "25 knots",
+            "15 kts",
+            "120 kn"
+          ],
+          "entity_type": "speed",
+          "signal": "system"
+        },
+        {
+          "id": "speed_pace_running",
+          "regex": "\\d{1,2}:\\d{2}\\s*(?:/km|/mi|per\\s*km|per\\s*mile)",
+          "case_insensitive": true,
+          "description": "Running/cycling pace (time per distance unit)",
+          "examples": [
+            "5:30/km",
+            "8:15 /mi",
+            "6:00 per km"
+          ],
+          "entity_type": "pace",
+          "signal": "system"
+        }
+      ]
+    },
+    {
+      "category": "temperature",
+      "name": "Temperature",
+      "description": "Temperature on weather apps, car climate control, cabin temperature, thermostat, cooking apps.",
+      "patterns": [
+        {
+          "id": "temperature_fahrenheit",
+          "regex": "-?\\d+(?:\\.\\d+)?\\s*°\\s*F",
+          "case_insensitive": false,
+          "description": "Temperature in Fahrenheit with degree symbol",
+          "examples": [
+            "72°F",
+            "32°F",
+            "-5° F",
+            "98.6°F"
+          ],
+          "entity_type": "temperature",
+          "signal": "system"
+        },
+        {
+          "id": "temperature_celsius",
+          "regex": "-?\\d+(?:\\.\\d+)?\\s*°\\s*C",
+          "case_insensitive": false,
+          "description": "Temperature in Celsius with degree symbol",
+          "examples": [
+            "22°C",
+            "0°C",
+            "-10° C",
+            "37.5°C"
+          ],
+          "entity_type": "temperature",
+          "signal": "system"
+        },
+        {
+          "id": "temperature_degree_only",
+          "regex": "-?\\d+(?:\\.\\d+)?\\s*°(?![NSEW])",
+          "case_insensitive": false,
+          "description": "Temperature with degree symbol but no unit letter (common on car displays). Negative lookahead excludes compass bearings.",
+          "examples": [
+            "72°",
+            "22°",
+            "-5°"
+          ],
+          "entity_type": "temperature",
+          "signal": "system",
+          "notes": "Lower confidence because bare degree could be compass bearing. Negative lookahead for N/S/E/W helps disambiguate."
+        }
+      ]
+    },
+    {
+      "category": "percentage",
+      "name": "Percentage Value",
+      "description": "Battery level, download progress, signal strength, humidity, health stats, discount percentages, volume level.",
+      "patterns": [
+        {
+          "id": "percentage_standard",
+          "regex": "\\d+(?:\\.\\d+)?\\s*%",
+          "case_insensitive": false,
+          "description": "Percentage value (battery, progress, discounts, stats)",
+          "examples": [
+            "85%",
+            "100%",
+            "50.5%",
+            "0%",
+            "15 %"
+          ],
+          "entity_type": "percentage",
+          "signal": "system"
+        }
+      ]
+    },
+    {
+      "category": "financial",
+      "name": "Financial Identifiers",
+      "description": "Masked/full card numbers, account references, transaction IDs, routing codes found in banking, payment, and receipt screens.",
+      "patterns": [
+        {
+          "id": "card_masked_stars",
+          "regex": "\\*{2,4}\\s?\\d{4}",
+          "case_insensitive": false,
+          "description": "Masked card/account number with asterisks",
+          "examples": [
+            "****1234",
+            "** 4892",
+            "***5678"
+          ],
+          "entity_type": "masked_card",
+          "signal": "user"
+        },
+        {
+          "id": "card_masked_dots",
+          "regex": "(?:•{2,4}|·{2,4})\\s?\\d{4}",
+          "case_insensitive": false,
+          "description": "Masked card/account number with bullet dots",
+          "examples": [
+            "••••1234",
+            "····5678"
+          ],
+          "entity_type": "masked_card",
+          "signal": "user"
+        },
+        {
+          "id": "card_ending_in",
+          "regex": "(?:ending|ends)\\s+(?:in|with)\\s+\\*?\\d{4}",
+          "case_insensitive": true,
+          "description": "Account/card reference as 'ending in XXXX'",
+          "examples": [
+            "ending in *4892",
+            "ending in 1234",
+            "ends with 5678"
+          ],
+          "entity_type": "masked_card",
+          "signal": "user"
+        },
+        {
+          "id": "card_full_masked",
+          "regex": "\\d{4}[\\s\\-]?\\*{4}[\\s\\-]?\\*{4}[\\s\\-]?\\d{4}",
+          "case_insensitive": false,
+          "description": "Full card format with middle digits masked",
+          "examples": [
+            "4532 **** **** 1234",
+            "5412-****-****-7890"
+          ],
+          "entity_type": "masked_card",
+          "signal": "user"
+        },
+        {
+          "id": "card_full_number_16digit",
+          "regex": "(?<!\\d)(?:4\\d{3}|5[1-5]\\d{2}|6011|65\\d{2})[\\s\\-]?\\d{4}[\\s\\-]?\\d{4}[\\s\\-]?\\d{4}(?!\\d)",
+          "case_insensitive": false,
+          "description": "Full unmasked 16-digit payment card number (Visa/Mastercard/Discover, grouped 4-4-4-4)",
+          "examples": [
+            "4532 1488 0343 6467",
+            "5425-2334-3010-9903"
+          ],
+          "entity_type": "card_number",
+          "signal": "user",
+          "notes": "High-sensitivity PII; unmasked full PANs should almost never legitimately appear in a screenshot — flag for redaction with high priority."
+        },
+        {
+          "id": "card_full_number_amex",
+          "regex": "(?<!\\d)3[47]\\d{2}[\\s\\-]?\\d{6}[\\s\\-]?\\d{5}(?!\\d)",
+          "case_insensitive": false,
+          "description": "Full unmasked American Express card number (15 digits, grouped 4-6-5)",
+          "examples": [
+            "3782 822463 10005",
+            "3714-496353-98431"
+          ],
+          "entity_type": "card_number",
+          "signal": "user",
+          "notes": "Amex uses a distinct 4-6-5 grouping unlike the 4-4-4-4 grouping of most other networks."
+        },
+        {
+          "id": "card_brand_mention",
+          "regex": "(?:Visa|Mastercard|MasterCard|Amex|American Express|Discover|Maestro|JCB|UnionPay|Diners Club)\\s+(?:\\*{2,4}\\s?)?\\d{4}",
+          "case_insensitive": true,
+          "description": "Card brand name followed by last digits",
+          "examples": [
+            "Visa ****1234",
+            "Mastercard 5678",
+            "Amex ****9012"
+          ],
+          "entity_type": "payment_method",
+          "signal": "user"
+        },
+        {
+          "id": "transaction_ref_id",
+          "regex": "(?:TXN|REF|ORD|INV|TKT|CONF|REC|PMT|WD|DEP)[\\s\\-#]?[A-Z0-9\\-]{4,25}",
+          "case_insensitive": false,
+          "description": "Transaction/Reference/Order ID (banking, receipts, tickets, confirmations)",
+          "examples": [
+            "TXN-9948201-US",
+            "REF-ABC12345",
+            "ORD-2026073100123",
+            "INV-00456",
+            "CONF-XY789Z"
+          ],
+          "entity_type": "reference_id",
+          "signal": "system"
+        },
+        {
+          "id": "order_number_hash",
+          "regex": "#\\s?(?:ORD|ORDER)?\\s?\\d{4,}",
+          "case_insensitive": true,
+          "description": "Order number with hash prefix (shopping, food delivery)",
+          "examples": [
+            "#12345",
+            "#ORD 67890",
+            "# 123456789"
+          ],
+          "entity_type": "reference_id",
+          "signal": "system"
+        },
+        {
+          "id": "iban",
+          "regex": "[A-Z]{2}\\d{2}(?:\\s?[A-Z0-9]{4}){2,7}(?:\\s?[A-Z0-9]{1,3})?",
+          "case_insensitive": false,
+          "description": "IBAN (International Bank Account Number). BBAN segment is alphanumeric (not purely numeric) since several countries — the UK among them — embed a bank code made of letters.",
+          "examples": [
+            "FR76 3000 6000 0112 3456 7890 189",
+            "DE89 3704 0044 0532 0130 00",
+            "GB29 NWBK 6016 1331 9268 19"
+          ],
+          "entity_type": "iban",
+          "signal": "user"
+        },
+        {
+          "id": "swift_bic",
+          "regex": "(?:(?:BIC|SWIFT)\\s*:?\\s*)?\\b[A-Z]{4}(?:DE|US|GB|FR|IT|ES|CA|JP|CH|NL|BE|AT|SE|NO|FI|DK|PL|CN|IN|AU|NZ|BR|MX|ZA|AE|SG|HK|KR|RU|TR|IE|PT|GR|CZ|HU|RO)(?:[A-Z0-9][0-9]|[0-9][A-Z0-9])(?:[A-Z0-9]{3})?\\b",
+          "case_insensitive": false,
+          "description": "SWIFT/BIC bank identifier code (8 or 11 characters)",
+          "examples": [
+            "DEUTDEFF",
+            "BOFAUS3NXXX",
+            "CHASUS33"
+          ],
+          "entity_type": "swift_bic",
+          "signal": "system",
+          "notes": "8-char alphanumeric codes are collision-prone with other short codes; treat as low-confidence unless near banking context."
+        },
+        {
+          "id": "uk_sort_code",
+          "regex": "(?<!\\d)\\d{2}-\\d{2}-\\d{2}(?!\\d)",
+          "case_insensitive": false,
+          "description": "UK bank sort code",
+          "examples": [
+            "12-34-56",
+            "60-16-13"
+          ],
+          "entity_type": "sort_code",
+          "signal": "user",
+          "notes": "Same shape as some date formats (DD-MM-YY); banking-app context increases confidence."
+        },
+        {
+          "id": "us_routing_number",
+          "regex": "(?:Routing(?:\\s+(?:Number|No\\.?|#))?)\\s*:?\\s*\\d{9}",
+          "case_insensitive": true,
+          "description": "US ABA bank routing number, label-anchored to avoid matching bare 9-digit strings",
+          "examples": [
+            "Routing: 021000021",
+            "Routing Number 111000025"
+          ],
+          "entity_type": "routing_number",
+          "signal": "user"
+        },
+        {
+          "id": "crypto_btc_address",
+          "regex": "(?<![a-zA-HJ-NP-Z0-9])(?:bc1[a-z0-9]{25,39}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})(?![a-zA-HJ-NP-Z0-9])",
+          "case_insensitive": false,
+          "description": "Bitcoin wallet address (Legacy/P2SH/Bech32)",
+          "examples": [
+            "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
+            "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh"
+          ],
+          "entity_type": "crypto_address",
+          "signal": "user"
+        },
+        {
+          "id": "crypto_eth_address",
+          "regex": "0x[a-fA-F0-9]{40}",
+          "case_insensitive": false,
+          "description": "Ethereum-style wallet address (also used by many EVM-compatible chains)",
+          "examples": [
+            "0x5aAeb6053f3e94c9b9a09f33669435E7ef1BeAed"
+          ],
+          "entity_type": "crypto_address",
+          "signal": "user"
+        }
+      ]
+    },
+    {
+      "category": "road_code",
+      "name": "Road / Highway Code",
+      "description": "Road designations on navigation and map screens (car and phone navigation apps).",
+      "patterns": [
+        {
+          "id": "road_european",
+          "regex": "(?<![a-zA-Z])[A-Z]{1,3}-\\d{1,5}(?![a-zA-Z0-9])",
+          "case_insensitive": false,
+          "description": "European road codes (E-15, AL-3302, A-1050, N-340, AP-7)",
+          "examples": [
+            "E-15",
+            "AL-3302",
+            "A-1050",
+            "AL-9024",
+            "N-340",
+            "AP-7"
+          ],
+          "entity_type": "road_code",
+          "signal": "system"
+        },
+        {
+          "id": "road_us_interstate",
+          "regex": "(?:I|US|SR|CR|Rte?|Hwy)[\\s\\-]?\\d{1,4}",
+          "case_insensitive": true,
+          "description": "US road codes (Interstate, US Route, State Route, County Road, Highway)",
+          "examples": [
+            "I-95",
+            "US-101",
+            "SR-99",
+            "CR-520",
+            "Hwy 1",
+            "Rt 66"
+          ],
+          "entity_type": "road_code",
+          "signal": "system"
+        },
+        {
+          "id": "road_uk_motorway",
+          "regex": "(?<![a-zA-Z])[AM]\\d{1,3}(?:\\([AM]\\))?(?![a-zA-Z0-9])",
+          "case_insensitive": false,
+          "description": "UK motorway/A-road codes (M25, A1, M1, A40)",
+          "examples": [
+            "M25",
+            "A1",
+            "M1",
+            "A40",
+            "M6",
+            "A303"
+          ],
+          "entity_type": "road_code",
+          "signal": "system",
+          "notes": "Single letter+number patterns have moderate confidence due to possible false positives"
+        },
+        {
+          "id": "road_de_autobahn",
+          "regex": "(?<![a-zA-Z])(?:A|B)\\s?\\d{1,3}(?![a-zA-Z0-9])",
+          "case_insensitive": false,
+          "description": "German Autobahn/Bundesstraße codes",
+          "examples": [
+            "A9",
+            "A 8",
+            "B12",
+            "A 100"
+          ],
+          "entity_type": "road_code",
+          "signal": "system",
+          "notes": "Overlaps in shape with UK codes and generic letter+number tokens; disambiguate with locale context."
+        },
+        {
+          "id": "road_jp_expressway",
+          "regex": "[東名阪中国九州東北関越]{1,3}自動車道|首都高速\\d{0,2}号?",
+          "case_insensitive": false,
+          "description": "Japanese expressway names (kanji), e.g. Tomei/Meishin/Shuto expressways",
+          "examples": [
+            "東名自動車道",
+            "首都高速3号"
+          ],
+          "entity_type": "road_code",
+          "signal": "system"
+        },
+        {
+          "id": "road_exit",
+          "regex": "(?:Exit|Sortie|Salida|Ausfahrt|Uscita|Saída|Uitrit|Zjazd|Съезд)\\s+\\d{1,3}[A-Z]?",
+          "case_insensitive": true,
+          "description": "Highway exit numbers (multilingual: EN, FR, ES, DE, IT, PT, NL, PL, RU)",
+          "examples": [
+            "Exit 42",
+            "Exit 15A",
+            "Sortie 23",
+            "Salida 7",
+            "Ausfahrt 12",
+            "Съезд 5"
+          ],
+          "entity_type": "exit_number",
+          "signal": "system"
+        }
+      ]
+    },
+    {
+      "category": "network",
+      "name": "Network / Connectivity Indicator",
+      "description": "Cellular and wireless indicators on phone status bars and car infotainment connectivity panels. Abbreviations are used unchanged across virtually all locales.",
+      "patterns": [
+        {
+          "id": "network_cellular",
+          "regex": "(?<![a-zA-Z])(?:5G\\+?|4G\\+?|LTE-?A?|3G|2G|EDGE|HSPA\\+?|UMTS|GPRS|CDMA|GSM|WCDMA)(?![a-zA-Z])",
+          "case_insensitive": false,
+          "description": "Cellular network type indicator",
+          "examples": [
+            "5G",
+            "4G",
+            "LTE",
+            "3G",
+            "LTE-A",
+            "HSPA+",
+            "EDGE",
+            "5G+"
+          ],
+          "entity_type": "network_type",
+          "signal": "system"
+        },
+        {
+          "id": "network_wifi",
+          "regex": "(?:Wi-?Fi|WiFi|WLAN|WI-FI)",
+          "case_insensitive": true,
+          "description": "WiFi/WLAN indicator",
+          "examples": [
+            "WiFi",
+            "Wi-Fi",
+            "WLAN",
+            "WI-FI"
+          ],
+          "entity_type": "network_type",
+          "signal": "system"
+        },
+        {
+          "id": "network_bluetooth",
+          "regex": "\\b(?:Bluetooth|BT|BLE)\\b(?:\\s+\\d+\\.\\d+)?",
+          "case_insensitive": true,
+          "description": "Bluetooth indicator",
+          "examples": [
+            "Bluetooth",
+            "BT",
+            "Bluetooth 5.0",
+            "BLE"
+          ],
+          "entity_type": "network_type",
+          "signal": "system"
+        },
+        {
+          "id": "network_nfc",
+          "regex": "(?<![a-zA-Z])NFC(?![a-zA-Z])",
+          "case_insensitive": false,
+          "description": "NFC indicator",
+          "examples": [
+            "NFC"
+          ],
+          "entity_type": "network_type",
+          "signal": "system"
+        },
+        {
+          "id": "network_ssid_labeled",
+          "regex": "\\b(?:SSID|Network\\s+Name|Wi-?Fi\\s+Network)\\s*:?\\s*[\\\"']?[\\w\\-.]{2,32}[\\\"']?",
+          "case_insensitive": true,
+          "description": "Wi-Fi network name (SSID), label-anchored",
+          "examples": [
+            "SSID: HomeNetwork_5G",
+            "Network: Office-Guest"
+          ],
+          "entity_type": "wifi_ssid",
+          "signal": "user",
+          "notes": "Free-text SSID value has no fixed shape; the label is the reliable anchor."
+        }
+      ]
+    },
+    {
+      "category": "vehicle_telemetry",
+      "name": "Vehicle Telemetry & Diagnostics",
+      "description": "Car dashboard readings: RPM, tire pressure, voltage, fuel efficiency, OBD codes, VIN, odometer, engine data, and consumable/service-life indicators.",
+      "patterns": [
+        {
+          "id": "vehicle_rpm",
+          "regex": "\\d{3,5}\\s*(?:RPM|rpm|r/min)",
+          "case_insensitive": false,
+          "description": "Engine RPM reading",
+          "examples": [
+            "3500 RPM",
+            "750 rpm",
+            "6200 RPM",
+            "800 r/min"
+          ],
+          "entity_type": "rpm",
+          "signal": "system"
+        },
+        {
+          "id": "vehicle_tire_pressure_psi",
+          "regex": "\\d+(?:\\.\\d+)?\\s*(?:PSI|psi)",
+          "case_insensitive": false,
+          "description": "Tire pressure in PSI",
+          "examples": [
+            "32 PSI",
+            "35.5 psi",
+            "28 PSI"
+          ],
+          "entity_type": "tire_pressure",
+          "signal": "system"
+        },
+        {
+          "id": "vehicle_tire_pressure_bar",
+          "regex": "\\d+(?:\\.\\d+)?\\s*(?:bar|BAR)(?!\\w)",
+          "case_insensitive": false,
+          "description": "Tire pressure in bar",
+          "examples": [
+            "2.2 bar",
+            "2.5 BAR",
+            "3.0 bar"
+          ],
+          "entity_type": "tire_pressure",
+          "signal": "system"
+        },
+        {
+          "id": "vehicle_voltage",
+          "regex": "\\d+(?:\\.\\d+)?\\s*[Vv](?:olts?)?(?!\\w)",
+          "case_insensitive": false,
+          "description": "Electrical voltage (battery, EV systems)",
+          "examples": [
+            "12.6V",
+            "14.2 V",
+            "400 volts",
+            "3.7v"
+          ],
+          "entity_type": "voltage",
+          "signal": "system"
+        },
+        {
+          "id": "vehicle_amperage",
+          "regex": "\\d+(?:\\.\\d+)?\\s*(?:A|amps?|mA)(?!\\w)",
+          "case_insensitive": true,
+          "description": "Electrical current (EV charging, battery monitoring)",
+          "examples": [
+            "32A",
+            "150 amps",
+            "500mA",
+            "7.2 A"
+          ],
+          "entity_type": "amperage",
+          "signal": "system"
+        },
+        {
+          "id": "vehicle_obd_code",
+          "regex": "(?<![a-zA-Z])[PCBU][0-9A-F]\\d{3}(?![a-zA-Z0-9])",
+          "case_insensitive": false,
+          "description": "OBD-II diagnostic trouble code (Powertrain, Chassis, Body, Network)",
+          "examples": [
+            "P0301",
+            "P0420",
+            "C1234",
+            "B0100",
+            "U0001"
+          ],
+          "entity_type": "obd_code",
+          "signal": "system"
+        },
+        {
+          "id": "vehicle_vin",
+          "regex": "(?<![a-zA-Z0-9])[A-HJ-NPR-Z0-9]{17}(?![a-zA-Z0-9])",
+          "case_insensitive": false,
+          "description": "Vehicle Identification Number (17 alphanumeric characters, excludes I, O, Q)",
+          "examples": [
+            "1HGCM82633A004352",
+            "WVWZZZ3CZWE123456"
+          ],
+          "entity_type": "vin",
+          "signal": "system",
+          "notes": "17 chars can match other alphanumeric strings. Verify context."
+        },
+        {
+          "id": "vehicle_fuel_efficiency_mpg",
+          "regex": "\\d+(?:\\.\\d+)?\\s*(?:mpg|MPG)",
+          "case_insensitive": false,
+          "description": "Fuel efficiency in miles per gallon",
+          "examples": [
+            "28.5 mpg",
+            "35 MPG",
+            "42.3 mpg"
+          ],
+          "entity_type": "fuel_efficiency",
+          "signal": "system"
+        },
+        {
+          "id": "vehicle_fuel_efficiency_lper100km",
+          "regex": "\\d+(?:\\.\\d+)?\\s*(?:L/100\\s*km|l/100km)",
+          "case_insensitive": false,
+          "description": "Fuel efficiency in liters per 100km (European standard)",
+          "examples": [
+            "7.2 L/100km",
+            "5.5 L/100 km",
+            "12.0 l/100km"
+          ],
+          "entity_type": "fuel_efficiency",
+          "signal": "system"
+        },
+        {
+          "id": "vehicle_odometer",
+          "regex": "\\d{1,3}(?:,\\d{3})+\\s*(?:mi|km|miles?)",
+          "case_insensitive": true,
+          "description": "Odometer reading with comma-separated thousands",
+          "examples": [
+            "45,123 mi",
+            "72,500 km",
+            "123,456 miles"
+          ],
+          "entity_type": "odometer",
+          "signal": "system"
+        },
+        {
+          "id": "vehicle_ev_range",
+          "regex": "\\d+\\s*(?:mi|km|miles?)\\s+(?:range|remaining|left)",
+          "case_insensitive": true,
+          "description": "EV remaining range estimate",
+          "examples": [
+            "180 mi range",
+            "250 km remaining",
+            "95 miles left"
+          ],
+          "entity_type": "ev_range",
+          "signal": "system"
+        },
+        {
+          "id": "vehicle_ev_charging_rate",
+          "regex": "\\d+(?:\\.\\d+)?\\s*(?:kW|KW|kWh|KWH)",
+          "case_insensitive": false,
+          "description": "EV charging power rate or energy capacity",
+          "examples": [
+            "50 kW",
+            "150 kW",
+            "75.5 kWh",
+            "11 KW"
+          ],
+          "entity_type": "charging_rate",
+          "signal": "system"
+        },
+        {
+          "id": "vehicle_service_life_percent",
+          "regex": "(?:Oil\\s*Life|Brake\\s*(?:Pad)?\\s*Life|Service|Tire\\s*Life)\\s*:?\\s*\\d{1,3}\\s*%",
+          "case_insensitive": true,
+          "description": "Consumable/service-life percentage indicator (oil life, brake pads, tires)",
+          "examples": [
+            "Oil Life: 45%",
+            "Brake Pad Life 20%",
+            "Service 80%"
+          ],
+          "entity_type": "service_life",
+          "signal": "system"
+        },
+        {
+          "id": "vehicle_def_level",
+          "regex": "(?:DEF|AdBlue)\\s*(?:Level)?\\s*:?\\s*\\d{1,3}\\s*%",
+          "case_insensitive": true,
+          "description": "Diesel exhaust fluid (AdBlue/DEF) level percentage",
+          "examples": [
+            "DEF Level: 60%",
+            "AdBlue 25%"
+          ],
+          "entity_type": "def_level",
+          "signal": "system"
+        },
+        {
+          "id": "vehicle_warning_seatbelt_multilang",
+          "regex": "(?:Fasten\\s+(?:your\\s+)?seatbelt|Please\\s+fasten\\s+seat\\s?belt|Attachez\\s+(?:votre\\s+)?ceinture|Bitte\\s+(?:Sicherheitsgurt\\s+)?anschnallen|Abroche(?:se)?\\s+el\\s+cintur[oó]n|Allacciare\\s+(?:le\\s+)?cintur[ae]|シートベルトを締めてください|请系好安全带|안전벨트를\\s*착용)",
+          "case_insensitive": true,
+          "description": "Seatbelt warning text across major languages",
+          "examples": [
+            "Fasten your seatbelt",
+            "Attachez votre ceinture",
+            "Bitte anschnallen",
+            "シートベルトを締めてください"
+          ],
+          "entity_type": "vehicle_warning",
+          "signal": "system"
+        },
+        {
+          "id": "vehicle_warning_low_fuel_multilang",
+          "regex": "(?:Low\\s+fuel|Fuel\\s+level\\s+low|Niveau\\s+de\\s+carburant\\s+bas|Kraftstoff\\s+niedrig|Combustible\\s+bajo|Carburante\\s+in\\s+riserva|燃料残量低下|燃油不足)",
+          "case_insensitive": true,
+          "description": "Low fuel warning text across major languages",
+          "examples": [
+            "Low fuel",
+            "Kraftstoff niedrig",
+            "Niveau de carburant bas",
+            "燃料残量低下"
+          ],
+          "entity_type": "vehicle_warning",
+          "signal": "system"
+        }
+      ]
+    },
+    {
+      "category": "media",
+      "name": "Media & Entertainment",
+      "description": "Radio frequency, ratings, resolution on music players, radio apps, video apps, app stores, review platforms.",
+      "patterns": [
+        {
+          "id": "media_radio_band",
+          "regex": "\\b(?:FM|AM|DAB|DAB\\+|AM/FM|FM/AM)\\b",
+          "case_insensitive": false,
+          "description": "Radio band indicator (FM, AM, DAB)",
+          "examples": [
+            "FM",
+            "AM",
+            "DAB",
+            "FM/AM"
+          ],
+          "entity_type": "radio_metadata",
+          "signal": "system"
+        },
+        {
+          "id": "media_radio_fm",
+          "regex": "\\d{2,3}\\.\\d\\s*(?:FM|MHz|fm|Hz)",
+          "case_insensitive": false,
+          "description": "FM radio frequency",
+          "examples": [
+            "98.7 FM",
+            "101.1 MHz",
+            "93.5 fm",
+            "107.9 FM"
+          ],
+          "entity_type": "radio_frequency",
+          "signal": "system"
+        },
+        {
+          "id": "media_radio_am",
+          "regex": "\\d{3,4}\\s*(?:AM|kHz|KHz|am)",
+          "case_insensitive": false,
+          "description": "AM radio frequency",
+          "examples": [
+            "1010 AM",
+            "680 kHz",
+            "770 AM",
+            "1500 KHz"
+          ],
+          "entity_type": "radio_frequency",
+          "signal": "system"
+        },
+        {
+          "id": "media_rating_fraction",
+          "regex": "\\d(?:\\.\\d)?\\s*/\\s*(?:5|10)(?:\\s*stars?)?",
+          "case_insensitive": true,
+          "description": "Rating as fraction (app stores, reviews, restaurants)",
+          "examples": [
+            "4.5/5",
+            "8/10",
+            "4.8 / 5 stars",
+            "3/5"
+          ],
+          "entity_type": "rating",
+          "signal": "system"
+        },
+        {
+          "id": "media_rating_stars",
+          "regex": "\\d(?:\\.\\d)?\\s*stars?",
+          "case_insensitive": true,
+          "description": "Rating with star word",
+          "examples": [
+            "4.5 stars",
+            "3 star",
+            "5 Stars"
+          ],
+          "entity_type": "rating",
+          "signal": "system"
+        },
+        {
+          "id": "media_resolution",
+          "regex": "\\d{3,4}\\s*[xX×]\\s*\\d{3,4}",
+          "case_insensitive": false,
+          "description": "Screen/video resolution in pixels",
+          "examples": [
+            "1920x1080",
+            "1280×720",
+            "3840 x 2160"
+          ],
+          "entity_type": "resolution",
+          "signal": "system"
+        },
+        {
+          "id": "media_resolution_shorthand",
+          "regex": "(?<![a-zA-Z0-9])(?:480p|720p|1080p|1440p|2160p|4320p|HD|FHD|QHD|UHD|4K|8K|SD)(?![a-zA-Z0-9])",
+          "case_insensitive": false,
+          "description": "Common resolution shorthand names",
+          "examples": [
+            "1080p",
+            "4K",
+            "720p",
+            "HD",
+            "UHD"
+          ],
+          "entity_type": "resolution",
+          "signal": "system"
+        },
+        {
+          "id": "media_track_progress",
+          "regex": "\\d{1,2}:\\d{2}\\s*/\\s*\\d{1,2}:\\d{2}",
+          "case_insensitive": false,
+          "description": "Media playback progress (elapsed / total time)",
+          "examples": [
+            "1:23 / 3:45",
+            "0:30/4:12"
+          ],
+          "entity_type": "playback_progress",
+          "signal": "system"
+        }
+      ]
+    },
+    {
+      "category": "data_size",
+      "name": "Data Size & Transfer Speed",
+      "description": "File sizes, storage usage, download/upload speeds on settings, file managers, browser, speed tests, cloud storage.",
+      "patterns": [
+        {
+          "id": "data_file_size",
+          "regex": "\\d+(?:\\.\\d+)?\\s*(?:bytes?|KB|MB|GB|TB|PB|kB|Kb|Mb|Gb)",
+          "case_insensitive": false,
+          "description": "File/data size in various units",
+          "examples": [
+            "2.5 MB",
+            "128 KB",
+            "1.2 GB",
+            "500 bytes",
+            "4.7 TB"
+          ],
+          "entity_type": "data_size",
+          "signal": "system"
+        },
+        {
+          "id": "data_transfer_speed_bits",
+          "regex": "\\d+(?:\\.\\d+)?\\s*(?:bps|Kbps|Mbps|Gbps|kbps|mbps|gbps)",
+          "case_insensitive": false,
+          "description": "Network transfer speed in bits per second",
+          "examples": [
+            "50 Mbps",
+            "100 Gbps",
+            "256 kbps",
+            "1 Gbps"
+          ],
+          "entity_type": "transfer_speed",
+          "signal": "system"
+        },
+        {
+          "id": "data_transfer_speed_bytes",
+          "regex": "\\d+(?:\\.\\d+)?\\s*(?:B/s|KB/s|MB/s|GB/s|kB/s)",
+          "case_insensitive": false,
+          "description": "Network transfer speed in bytes per second",
+          "examples": [
+            "12.5 MB/s",
+            "100 KB/s",
+            "1.2 GB/s"
+          ],
+          "entity_type": "transfer_speed",
+          "signal": "system"
+        },
+        {
+          "id": "data_usage_fraction",
+          "regex": "\\d+(?:\\.\\d+)?\\s*(?:KB|MB|GB|TB)\\s*/\\s*\\d+(?:\\.\\d+)?\\s*(?:KB|MB|GB|TB)",
+          "case_insensitive": false,
+          "description": "Data usage as used/total (storage, data plans)",
+          "examples": [
+            "2.5 GB / 10 GB",
+            "128 MB / 1 GB",
+            "750 MB / 2 GB"
+          ],
+          "entity_type": "data_usage",
+          "signal": "system"
+        }
+      ]
+    },
+    {
+      "category": "health_fitness",
+      "name": "Health & Fitness Metrics",
+      "description": "Health readings on fitness trackers, health apps, smartwatch displays, medical apps.",
+      "patterns": [
+        {
+          "id": "health_heart_rate",
+          "regex": "\\d{2,3}\\s*(?:bpm|BPM)",
+          "case_insensitive": false,
+          "description": "Heart rate in beats per minute",
+          "examples": [
+            "72 bpm",
+            "120 BPM",
+            "65 bpm"
+          ],
+          "entity_type": "heart_rate",
+          "signal": "system"
+        },
+        {
+          "id": "health_blood_pressure",
+          "regex": "\\d{2,3}\\s*/\\s*\\d{2,3}(?:\\s*mmHg)?",
+          "case_insensitive": true,
+          "description": "Blood pressure reading (systolic/diastolic)",
+          "examples": [
+            "120/80",
+            "135/90 mmHg",
+            "110/70"
+          ],
+          "entity_type": "blood_pressure",
+          "signal": "user",
+          "notes": "Can conflict with date fractions or scores. Context important."
+        },
+        {
+          "id": "health_steps",
+          "regex": "\\d{1,3}(?:,\\d{3})*\\s*steps?",
+          "case_insensitive": true,
+          "description": "Step count from pedometer/fitness tracker",
+          "examples": [
+            "10,234 steps",
+            "5000 steps",
+            "1,500 step"
+          ],
+          "entity_type": "steps",
+          "signal": "system"
+        },
+        {
+          "id": "health_calories",
+          "regex": "\\d{1,3}(?:,\\d{3})*\\s*(?:cal|kcal|Cal|kCal|calories?|Calories?)",
+          "case_insensitive": false,
+          "description": "Calorie count from fitness/nutrition apps",
+          "examples": [
+            "350 cal",
+            "2,100 kcal",
+            "1500 Calories",
+            "120 Cal"
+          ],
+          "entity_type": "calories",
+          "signal": "system"
+        },
+        {
+          "id": "health_weight_kg",
+          "regex": "\\d+(?:\\.\\d+)?\\s*(?:kg|KG|kilograms?)",
+          "case_insensitive": false,
+          "description": "Weight in kilograms",
+          "examples": [
+            "75 kg",
+            "62.5 KG",
+            "80 kilograms"
+          ],
+          "entity_type": "weight",
+          "signal": "user"
+        },
+        {
+          "id": "health_weight_lbs",
+          "regex": "\\d+(?:\\.\\d+)?\\s*(?:lbs?|pounds?)",
+          "case_insensitive": true,
+          "description": "Weight in pounds",
+          "examples": [
+            "165 lbs",
+            "130 lb",
+            "200 pounds"
+          ],
+          "entity_type": "weight",
+          "signal": "user"
+        },
+        {
+          "id": "health_spo2",
+          "regex": "(?:SpO2|SPO2|O2|oxygen)\\s*:?\\s*\\d{2,3}\\s*%",
+          "case_insensitive": true,
+          "description": "Blood oxygen saturation level",
+          "examples": [
+            "SpO2: 98%",
+            "O2 97%",
+            "SPO2 95%"
+          ],
+          "entity_type": "blood_oxygen",
+          "signal": "system"
+        },
+        {
+          "id": "health_glucose_mgdl",
+          "regex": "\\d{2,3}\\s*mg/dL",
+          "case_insensitive": false,
+          "description": "Blood glucose reading in mg/dL (glucose monitor apps)",
+          "examples": [
+            "110 mg/dL",
+            "85 mg/dL"
+          ],
+          "entity_type": "blood_glucose",
+          "signal": "user"
+        },
+        {
+          "id": "health_glucose_mmol",
+          "regex": "\\d{1,2}(?:\\.\\d)?\\s*mmol/L",
+          "case_insensitive": false,
+          "description": "Blood glucose reading in mmol/L (glucose monitor apps, non-US)",
+          "examples": [
+            "5.5 mmol/L",
+            "7.2 mmol/L"
+          ],
+          "entity_type": "blood_glucose",
+          "signal": "user"
+        },
+        {
+          "id": "health_sleep_duration",
+          "regex": "\\d{1,2}h\\s?\\d{1,2}m\\s+(?:sleep|asleep)",
+          "case_insensitive": true,
+          "description": "Sleep duration reading from a sleep-tracking app",
+          "examples": [
+            "7h 32m sleep",
+            "6h15m asleep"
+          ],
+          "entity_type": "sleep_duration",
+          "signal": "user"
+        }
+      ]
+    },
+    {
+      "category": "navigation",
+      "name": "Navigation & Location Data",
+      "description": "GPS coordinates, compass bearings, altitude, ETA markers on navigation and map apps (phone and car). Includes 'ETA' label translated for major languages.",
+      "patterns": [
+        {
+          "id": "nav_gps_decimal",
+          "regex": "-?\\d{1,3}\\.\\d{4,8}\\s*,\\s*-?\\d{1,3}\\.\\d{4,8}",
+          "case_insensitive": false,
+          "description": "GPS coordinates in decimal degrees (latitude, longitude)",
+          "examples": [
+            "40.7128, -74.0060",
+            "51.5074, -0.1278",
+            "-33.8688, 151.2093"
+          ],
+          "entity_type": "gps_coordinates",
+          "signal": "system"
+        },
+        {
+          "id": "nav_gps_dms",
+          "regex": "\\d{1,3}°\\s*\\d{1,2}'(?:\\s*\\d{1,2}(?:\\.\\d+)?\\\"?)?\\s*[NSEW]",
+          "case_insensitive": false,
+          "description": "GPS coordinates in degrees/minutes(/seconds) — seconds component is optional since coarser DM-only displays are common",
+          "examples": [
+            "40°42'46\"N",
+            "74°0'22\"W",
+            "51°30'N"
+          ],
+          "entity_type": "gps_coordinates",
+          "signal": "system"
+        },
+        {
+          "id": "nav_altitude_feet",
+          "regex": "\\d+(?:,\\d{3})*\\s*(?:ft|feet)\\s*(?:alt(?:itude)?|ASL|MSL|elev(?:ation)?)?",
+          "case_insensitive": true,
+          "description": "Altitude in feet (aviation, hiking, weather)",
+          "examples": [
+            "1,500 ft",
+            "35,000 feet",
+            "450 ft altitude",
+            "5000 ft ASL"
+          ],
+          "entity_type": "altitude",
+          "signal": "system"
+        },
+        {
+          "id": "nav_altitude_meters",
+          "regex": "\\d+(?:,\\d{3})*\\s*(?:m|meters?)\\s*(?:alt(?:itude)?|ASL|MSL|elev(?:ation)?)",
+          "case_insensitive": true,
+          "description": "Altitude in meters (requires unit context word to avoid matching plain meters)",
+          "examples": [
+            "450 m altitude",
+            "8848 m ASL",
+            "1200 meters elevation"
+          ],
+          "entity_type": "altitude",
+          "signal": "system"
+        },
+        {
+          "id": "nav_compass_bearing",
+          "regex": "\\d{1,3}°\\s*(?:N|S|E|W|NE|NW|SE|SW|NNE|NNW|ENE|ESE|SSE|SSW|WNW|WSW)",
+          "case_insensitive": false,
+          "description": "Compass bearing with degrees and direction",
+          "examples": [
+            "45° NE",
+            "225° SW",
+            "180° S",
+            "0° N"
+          ],
+          "entity_type": "compass_bearing",
+          "signal": "system"
+        },
+        {
+          "id": "nav_eta_label",
+          "regex": "(?:ETA|Arrival|Arriving|Arrive)\\s*:?\\s*(?:at\\s+|in\\s+)?\\d{1,2}[:\\.]\\d{2}(?:\\s*(?:AM|PM))?",
+          "case_insensitive": true,
+          "description": "ETA (Estimated Time of Arrival) with time value",
+          "examples": [
+            "ETA: 4:15 PM",
+            "Arriving at 3:30",
+            "Arrival: 14:22",
+            "Arrive in 5:30"
+          ],
+          "entity_type": "eta",
+          "signal": "system"
+        },
+        {
+          "id": "nav_eta_label_multilang",
+          "regex": "(?:Llegada|Heure d'arriv[ée]e|Ankunft|Arrivo|Chegada|Aankomst|Прибытие|到着|到达|도착)\\s*:?\\s*\\d{1,2}[:\\.]\\d{2}",
+          "case_insensitive": true,
+          "description": "ETA/arrival label with time value, Spanish/French/German/Italian/Portuguese/Dutch/Russian/Japanese/Chinese/Korean",
+          "examples": [
+            "Llegada: 16:15",
+            "Heure d'arrivée: 14:22",
+            "Ankunft: 15:30",
+            "到着: 14:22"
+          ],
+          "entity_type": "eta",
+          "signal": "system"
+        },
+        {
+          "id": "nav_turn_instruction_multilang",
+          "regex": "(?:Turn\\s+(?:left|right)|Continue\\s+straight|Keep\\s+(?:left|right)|Tournez\\s+à\\s+(?:gauche|droite)|Girar\\s+a\\s+la\\s+(?:izquierda|derecha)|Links\\s+abbiegen|Rechts\\s+abbiegen|Gire\\s+à\\s+(?:esquerda|direita)|直進|左折|右折)",
+          "case_insensitive": true,
+          "description": "Turn-by-turn navigation instruction across major languages",
+          "examples": [
+            "Turn left",
+            "Tournez à droite",
+            "Girar a la izquierda",
+            "左折"
+          ],
+          "entity_type": "nav_instruction",
+          "signal": "system"
+        }
+      ]
+    },
+    {
+      "category": "weather",
+      "name": "Weather Data",
+      "description": "Weather metrics displayed in weather apps, car dashboards, notification widgets.",
+      "patterns": [
+        {
+          "id": "weather_wind_speed",
+          "regex": "\\d+(?:\\.\\d+)?\\s*(?:mph|km/h|m/s|kts?)\\s*(?:winds?|gusts?)?",
+          "case_insensitive": true,
+          "description": "Wind speed (overlaps with speed category but paired with wind context)",
+          "examples": [
+            "15 mph winds",
+            "25 km/h gusts",
+            "10 m/s wind"
+          ],
+          "entity_type": "wind_speed",
+          "signal": "system"
+        },
+        {
+          "id": "weather_humidity",
+          "regex": "(?:humidity|humid|humedad|humidité|Luftfeuchtigkeit|umidità|umidade)\\s*:?\\s*\\d+\\s*%",
+          "case_insensitive": true,
+          "description": "Humidity percentage with label (English/Spanish/French/German/Italian/Portuguese)",
+          "examples": [
+            "Humidity: 65%",
+            "humidity 80%",
+            "Humedad: 70%",
+            "Luftfeuchtigkeit: 55%"
+          ],
+          "entity_type": "humidity",
+          "signal": "system"
+        },
+        {
+          "id": "weather_uv_index",
+          "regex": "(?:UV|uv)\\s*(?:index|indice|Index)?\\s*:?\\s*\\d{1,2}",
+          "case_insensitive": false,
+          "description": "UV index reading",
+          "examples": [
+            "UV: 8",
+            "UV index 5",
+            "UV 11",
+            "uv: 3"
+          ],
+          "entity_type": "uv_index",
+          "signal": "system"
+        },
+        {
+          "id": "weather_visibility",
+          "regex": "(?:visibility|vis|visibilidad|visibilité|Sichtweite)\\s*:?\\s*\\d+(?:\\.\\d+)?\\s*(?:mi|km|miles?|meters?|metres?)",
+          "case_insensitive": true,
+          "description": "Visibility distance (weather, aviation)",
+          "examples": [
+            "Visibility: 10 mi",
+            "Vis: 5 km",
+            "visibility 8.5 miles",
+            "Sichtweite: 3 km"
+          ],
+          "entity_type": "visibility",
+          "signal": "system"
+        },
+        {
+          "id": "weather_precipitation",
+          "regex": "\\d+\\s*%\\s*(?:rain|precip(?:itation)?|chance of rain|snow|lluvia|pluie|Regen|pioggia|chuva)",
+          "case_insensitive": true,
+          "description": "Precipitation probability percentage (multi-language)",
+          "examples": [
+            "60% rain",
+            "30% precipitation",
+            "80% chance of rain",
+            "45% lluvia"
+          ],
+          "entity_type": "precipitation_chance",
+          "signal": "system"
+        },
+        {
+          "id": "weather_air_quality_index",
+          "regex": "(?:AQI|Air\\s+Quality)\\s*:?\\s*\\d{1,3}",
+          "case_insensitive": true,
+          "description": "Air Quality Index reading",
+          "examples": [
+            "AQI: 42",
+            "Air Quality 87"
+          ],
+          "entity_type": "air_quality_index",
+          "signal": "system"
+        }
+      ]
+    },
+    {
+      "category": "identifiers",
+      "name": "Software & Product Identifiers",
+      "description": "Version numbers, build numbers, serial numbers, model numbers found in settings, about screens, app stores.",
+      "patterns": [
+        {
+          "id": "id_version_v_prefix",
+          "regex": "(?<![a-zA-Z])[vV]\\d+(?:\\.\\d+){1,3}(?:[\\-+][a-zA-Z0-9.]+)?",
+          "case_insensitive": false,
+          "description": "Version number with v prefix",
+          "examples": [
+            "v1.2.3",
+            "V2.0.1",
+            "v12.0.1-beta",
+            "v3.1.4+build.5"
+          ],
+          "entity_type": "version_number",
+          "signal": "system"
+        },
+        {
+          "id": "id_version_word",
+          "regex": "(?:Version|version|VERSION|ver\\.?)\\s+\\d+(?:\\.\\d+){0,3}",
+          "case_insensitive": false,
+          "description": "Version with 'Version' word prefix",
+          "examples": [
+            "Version 12.0.1",
+            "version 3.2",
+            "VERSION 1.0.0",
+            "ver. 2.5"
+          ],
+          "entity_type": "version_number",
+          "signal": "system"
+        },
+        {
+          "id": "id_build_number",
+          "regex": "(?:Build|build|BUILD)\\s+[A-Z0-9]+(?:\\.[A-Z0-9]+)*",
+          "case_insensitive": false,
+          "description": "Build number/identifier",
+          "examples": [
+            "Build 22621.1",
+            "build ABC123",
+            "BUILD 2026.07"
+          ],
+          "entity_type": "build_number",
+          "signal": "system"
+        },
+        {
+          "id": "id_model_number",
+          "regex": "(?:Model|model|MDL)\\s*:?\\s*[A-Z0-9][A-Z0-9\\-]{3,20}",
+          "case_insensitive": false,
+          "description": "Device model number",
+          "examples": [
+            "Model: SM-G998B",
+            "model A2342",
+            "MDL: XR-500"
+          ],
+          "entity_type": "model_number",
+          "signal": "system"
+        },
+        {
+          "id": "id_imei",
+          "regex": "(?:IMEI)\\s*:?\\s*\\d{2}[\\s\\-]?\\d{6}[\\s\\-]?\\d{6}[\\s\\-]?\\d",
+          "case_insensitive": false,
+          "description": "IMEI device identifier, label-anchored",
+          "examples": [
+            "IMEI: 356938035643809",
+            "IMEI 490154203237518"
+          ],
+          "entity_type": "imei",
+          "signal": "system",
+          "notes": "Device-identifying, not personally-identifying, but still worth flagging in security-sensitive contexts."
+        },
+        {
+          "id": "id_iccid",
+          "regex": "(?:ICCID)\\s*:?\\s*\\d{18,22}",
+          "case_insensitive": false,
+          "description": "SIM card ICCID identifier, label-anchored",
+          "examples": [
+            "ICCID: 8901260123456789012"
+          ],
+          "entity_type": "iccid",
+          "signal": "system"
+        },
+        {
+          "id": "id_serial_number",
+          "regex": "(?:S/N|Serial(?:\\s+(?:Number|No\\.?))?|SN)\\s*:?\\s*[A-Z0-9\\-]{6,20}",
+          "case_insensitive": true,
+          "description": "Generic device serial number, label-anchored",
+          "examples": [
+            "S/N: C02XL0GKJGH7",
+            "Serial Number: 5CD1234ABC",
+            "SN A1B2C3D4E5"
+          ],
+          "entity_type": "serial_number",
+          "signal": "system"
+        }
+      ]
+    },
+    {
+      "category": "social",
+      "name": "Social Media Markers",
+      "description": "Social media handles, hashtags, mentions found across social and messaging apps.",
+      "patterns": [
+        {
+          "id": "social_handle",
+          "regex": "@[a-zA-Z0-9._]{1,30}",
+          "case_insensitive": false,
+          "description": "Social media handle/mention (Twitter/X, Instagram, TikTok, etc.)",
+          "examples": [
+            "@johndoe",
+            "@user_name.123",
+            "@official.account"
+          ],
+          "entity_type": "social_handle",
+          "signal": "user"
+        },
+        {
+          "id": "social_hashtag",
+          "regex": "#[a-zA-Z][a-zA-Z0-9_]{1,50}",
+          "case_insensitive": false,
+          "description": "Hashtag from social media posts",
+          "examples": [
+            "#trending",
+            "#photography",
+            "#summer2026",
+            "#OpenAI"
+          ],
+          "entity_type": "hashtag",
+          "signal": "user"
+        }
+      ]
+    },
+    {
+      "category": "url",
+      "name": "URL / Web Address",
+      "description": "URLs and web addresses in browser, messaging, email, link sharing, app screens.",
+      "patterns": [
+        {
+          "id": "url_full",
+          "regex": "https?://[^\\s<>\\\"']+",
+          "case_insensitive": true,
+          "description": "Full URL with http/https protocol",
+          "examples": [
+            "https://www.google.com",
+            "http://example.com/path?q=1",
+            "https://app.store/download"
+          ],
+          "entity_type": "url",
+          "signal": "system",
+          "notes": "URLs are typically system-displayed links, but user could have typed/pasted them"
+        },
+        {
+          "id": "url_www",
+          "regex": "www\\.[a-zA-Z0-9\\-]+(?:\\.[a-zA-Z]{2,})+(?:/[^\\s]*)?",
+          "case_insensitive": true,
+          "description": "URL starting with www (no protocol prefix)",
+          "examples": [
+            "www.example.com",
+            "www.google.com/maps",
+            "www.bank.co.uk/login"
+          ],
+          "entity_type": "url",
+          "signal": "system"
+        },
+        {
+          "id": "url_idn_punycode",
+          "regex": "xn--[a-zA-Z0-9\\-]+(?:\\.[a-zA-Z]{2,})+",
+          "case_insensitive": false,
+          "description": "Internationalized domain name in Punycode form",
+          "examples": [
+            "xn--fsqu00a.xn--0zwm56d",
+            "xn--80akhbyknj4f.xn--p1ai"
+          ],
+          "entity_type": "url",
+          "signal": "system"
+        }
+      ]
+    },
+    {
+      "category": "ip_mac",
+      "name": "Network Addresses",
+      "description": "IP and MAC addresses in network settings, diagnostics, developer tools, router apps.",
+      "patterns": [
+        {
+          "id": "ip_v4",
+          "regex": "(?:(?:25[0-5]|2[0-4]\\d|[01]?\\d\\d?)\\.){3}(?:25[0-5]|2[0-4]\\d|[01]?\\d\\d?)",
+          "case_insensitive": false,
+          "description": "IPv4 address",
+          "examples": [
+            "192.168.1.1",
+            "10.0.0.1",
+            "172.16.254.1",
+            "255.255.255.0"
+          ],
+          "entity_type": "ip_address",
+          "signal": "system"
+        },
+        {
+          "id": "ip_v6",
+          "regex": "(?<![a-zA-Z0-9:])(?:(?:[A-Fa-f0-9]{1,4}:){7}[A-Fa-f0-9]{1,4}|(?:[A-Fa-f0-9]{1,4}:){1,7}:|(?:[A-Fa-f0-9]{1,4}:){1,6}:[A-Fa-f0-9]{1,4}|(?:[A-Fa-f0-9]{1,4}:){1,5}(?::[A-Fa-f0-9]{1,4}){1,2}|(?:[A-Fa-f0-9]{1,4}:){1,4}(?::[A-Fa-f0-9]{1,4}){1,3}|(?:[A-Fa-f0-9]{1,4}:){1,3}(?::[A-Fa-f0-9]{1,4}){1,4}|(?:[A-Fa-f0-9]{1,4}:){1,2}(?::[A-Fa-f0-9]{1,4}){1,5}|[A-Fa-f0-9]{1,4}:(?:(?::[A-Fa-f0-9]{1,4}){1,6})|:(?:(?::[A-Fa-f0-9]{1,4}){1,7}|:))(?![a-zA-Z0-9:])",
+          "case_insensitive": false,
+          "description": "IPv6 address, full or abbreviated with a single '::' zero-run contraction anywhere in the address",
+          "examples": [
+            "2001:0db8:85a3:0000:0000:8a2e:0370:7334",
+            "fe80::1",
+            "::1"
+          ],
+          "entity_type": "ip_address",
+          "signal": "system",
+          "notes": "Abbreviated forms can be short; combine with network-settings context to reduce false positives."
+        },
+        {
+          "id": "mac_address",
+          "regex": "(?:[0-9A-Fa-f]{2}[:\\-]){5}[0-9A-Fa-f]{2}",
+          "case_insensitive": false,
+          "description": "MAC address (network adapter identifier)",
+          "examples": [
+            "00:1A:2B:3C:4D:5E",
+            "AA-BB-CC-DD-EE-FF",
+            "a1:b2:c3:d4:e5:f6"
+          ],
+          "entity_type": "mac_address",
+          "signal": "system"
+        }
+      ]
+    },
+    {
+      "category": "postal",
+      "name": "Postal / ZIP Code",
+      "description": "Postal codes found in address fields, delivery apps, ride-sharing, profile forms, shipping labels, across major postal-code formats worldwide.",
+      "patterns": [
+        {
+          "id": "postal_us_zip",
+          "regex": "(?<![\\d])\\d{5}(?:-\\d{4})?(?![\\d])",
+          "case_insensitive": false,
+          "description": "US ZIP code (5-digit or ZIP+4)",
+          "examples": [
+            "90210",
+            "10001",
+            "94102-3298",
+            "60601"
+          ],
+          "entity_type": "zip_code",
+          "signal": "user",
+          "notes": "Low confidence because bare 5-digit numbers are common. Higher confidence when in address context."
+        },
+        {
+          "id": "postal_uk",
+          "regex": "[A-Z]{1,2}\\d[A-Z\\d]?\\s*\\d[A-Z]{2}",
+          "case_insensitive": false,
+          "description": "UK postcode",
+          "examples": [
+            "SW1A 1AA",
+            "EC2R 8AH",
+            "B1 1BB",
+            "W1A 0AX"
+          ],
+          "entity_type": "postal_code",
+          "signal": "user"
+        },
+        {
+          "id": "postal_canadian",
+          "regex": "[A-Z]\\d[A-Z]\\s*\\d[A-Z]\\d",
+          "case_insensitive": false,
+          "description": "Canadian postal code",
+          "examples": [
+            "K1A 0B1",
+            "V5K 0A1",
+            "M5H 2N2",
+            "T2P 1J9"
+          ],
+          "entity_type": "postal_code",
+          "signal": "user"
+        },
+        {
+          "id": "postal_nl",
+          "regex": "\\d{4}\\s?[A-Z]{2}(?![A-Z0-9])",
+          "case_insensitive": false,
+          "description": "Dutch postcode (4 digits + 2 letters)",
+          "examples": [
+            "1234 AB",
+            "1071AA"
+          ],
+          "entity_type": "postal_code",
+          "signal": "user"
+        },
+        {
+          "id": "postal_jp",
+          "regex": "\\d{3}-\\d{4}",
+          "case_insensitive": false,
+          "description": "Japanese postal code",
+          "examples": [
+            "100-0001",
+            "530-0001"
+          ],
+          "entity_type": "postal_code",
+          "signal": "user"
+        },
+        {
+          "id": "postal_br",
+          "regex": "\\d{5}-\\d{3}",
+          "case_insensitive": false,
+          "description": "Brazilian postal code (CEP)",
+          "examples": [
+            "01310-100",
+            "20040-020"
+          ],
+          "entity_type": "postal_code",
+          "signal": "user"
+        },
+        {
+          "id": "postal_pl",
+          "regex": "\\d{2}-\\d{3}",
+          "case_insensitive": false,
+          "description": "Polish postal code",
+          "examples": [
+            "00-001",
+            "30-059"
+          ],
+          "entity_type": "postal_code",
+          "signal": "user",
+          "notes": "Shape overlaps with other 2-3 digit dashed codes; address context increases confidence."
+        },
+        {
+          "id": "postal_in_pin",
+          "regex": "(?<!\\d)\\d{6}(?!\\d)",
+          "case_insensitive": false,
+          "description": "Indian PIN code (6 digits)",
+          "examples": [
+            "110001",
+            "400001"
+          ],
+          "entity_type": "postal_code",
+          "signal": "user",
+          "notes": "Bare 6-digit numbers are highly collision-prone (phone fragments, OTPs, IDs); needs address context."
+        },
+        {
+          "id": "postal_generic_alphanum",
+          "regex": "(?:Postal\\s+Code|Zip\\s*Code|Post\\s?code|C[oó]digo\\s+Postal|Code\\s+Postal|Postleitzahl)\\s*:?\\s*[A-Z0-9][A-Z0-9\\s\\-]{2,9}",
+          "case_insensitive": true,
+          "description": "Label-anchored postal code in any format (English/Spanish/French/German)",
+          "examples": [
+            "Postal Code: 94102",
+            "Code Postal: 75001",
+            "Postleitzahl: 10115"
+          ],
+          "entity_type": "postal_code",
+          "signal": "user"
+        }
+      ]
+    },
+    {
+      "category": "security_codes",
+      "name": "One-Time Passwords & PIN Codes",
+      "description": "Verification codes shown in SMS/authenticator notifications, banking app 2FA screens, and PIN entry prompts. Extremely high-value to redact since exposure enables account takeover.",
+      "patterns": [
+        {
+          "id": "otp_labeled",
+          "regex": "(?:OTP|One[\\-\\s]?Time\\s+(?:Passcode|Password|Code)|Verification\\s+Code|Security\\s+Code|Auth(?:entication)?\\s+Code|C[oó]digo\\s+de\\s+verificaci[oó]n|Code\\s+de\\s+v[ée]rification|Bestätigungscode)\\s*(?:is|:)?\\s*\\d{4,8}",
+          "case_insensitive": true,
+          "description": "Labeled OTP/verification code (English/Spanish/French/German)",
+          "examples": [
+            "Your OTP is 482913",
+            "Verification Code: 384021",
+            "Código de verificación: 559012"
+          ],
+          "entity_type": "otp_code",
+          "signal": "user"
+        },
+        {
+          "id": "otp_bare_context",
+          "regex": "(?:Your\\s+(?:code|verification code)\\s+is|Use\\s+code|Enter\\s+code)\\s*:?\\s*\\d{4,8}",
+          "case_insensitive": true,
+          "description": "Contextually-anchored bare OTP code",
+          "examples": [
+            "Your code is 483920",
+            "Use code 119284",
+            "Enter code: 5588"
+          ],
+          "entity_type": "otp_code",
+          "signal": "user"
+        },
+        {
+          "id": "pin_labeled",
+          "regex": "(?:PIN|Passcode)\\s*(?:code)?\\s*:?\\s*\\d{4,6}(?![\\d%])",
+          "case_insensitive": true,
+          "description": "Labeled PIN/passcode entry (banking, phone unlock, safe/lock apps)",
+          "examples": [
+            "PIN: 4821",
+            "Passcode 119284"
+          ],
+          "entity_type": "pin_code",
+          "signal": "user"
+        }
+      ]
+    },
+    {
+      "category": "messaging_status",
+      "name": "Messaging Status Labels",
+      "description": "System-generated status text in messaging/chat apps (delivery/read receipts, presence indicators). Useful to classify as 'system' signal so redaction tools don't over-flag routine chrome text as personal content.",
+      "patterns": [
+        {
+          "id": "msg_status_en",
+          "regex": "(?:Delivered|Read|Seen|Sent|Typing\\.{3}|Online|Last seen recently|Active now)",
+          "case_insensitive": true,
+          "description": "English messaging status/presence labels",
+          "examples": [
+            "Delivered",
+            "Read 10:32 PM",
+            "Seen",
+            "Typing...",
+            "Active now"
+          ],
+          "entity_type": "message_status",
+          "signal": "system",
+          "notes": "Common English words; combine with messaging-app UI context to avoid over-matching prose."
+        },
+        {
+          "id": "msg_status_multilang",
+          "regex": "\\b(?:Entregado|Le[ií]do|Escribiendo\\.\\.\\.|En l[ií]nea|Livr[ée]|Lu|En train d'[ée]crire|En ligne|Zugestellt|Gelesen|Tippt gerade|Online|Consegnato|Letto|Sta scrivendo|Entregue|Lida|Digitando|Bezorgd|Gelezen|Aan het typen)\\b|(?:已送达|已读|正在输入|既読|送信済み|入力中|전송됨|읽음|입력\\s*중)",
+          "case_insensitive": true,
+          "description": "Messaging status/presence labels across Spanish/French/German/Italian/Portuguese/Dutch/Chinese/Japanese/Korean",
+          "examples": [
+            "Entregado",
+            "Zugestellt",
+            "既読",
+            "已读",
+            "읽음"
+          ],
+          "entity_type": "message_status",
+          "signal": "system"
+        }
+      ]
+    },
+    {
+      "category": "emergency",
+      "name": "Emergency Service Numbers",
+      "description": "Emergency dial numbers as shown on phone dialer/SOS screens and car SOS/eCall systems. Context-anchored to avoid matching arbitrary short numbers.",
+      "patterns": [
+        {
+          "id": "emergency_number_labeled",
+          "regex": "(?:Emergency|SOS|eCall)\\s*:?\\s*(?:Call\\s+)?(?:911|999|112|000|110|119|120|122|17|18|15)(?!\\d)",
+          "case_insensitive": true,
+          "description": "Context-labeled emergency dial number",
+          "examples": [
+            "Emergency: 911",
+            "SOS Call 112",
+            "Emergency Call 999"
+          ],
+          "entity_type": "emergency_number",
+          "signal": "system",
+          "notes": "Bare 2-3 digit emergency codes are too collision-prone to match without an anchoring label like 'Emergency' or 'SOS'."
+        }
+      ]
+    }
+  ]
+}
