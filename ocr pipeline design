@@ -1,0 +1,144 @@
+# Comprehensive Implementation Plan: Modular OCR Pipeline with Abstract Design Pattern & ONNX
+
+This plan details the full technical implementation of the end-to-end OCR pipeline designed for **maximum modularity**, **ONNX acceleration**, **batched execution**, and zero accuracy loss.
+
+---
+
+## 1. Modular Architecture: Abstract Design Pattern
+
+To achieve maximum modularity for future-proof enhancements, the pipeline will be built using the **Strategy Pattern** with a shared `PipelineContext`:
+
+### `PipelineContext` Dataclass
+Holds state cleanly as data flows across stages without tight coupling:
+```python
+@dataclass
+class PipelineContext:
+    image_path: str
+    image_stem: str
+    original_image: Optional[np.ndarray] = None
+    det_json_path: Optional[str] = None
+    detections: List[Dict] = field(default_factory=list)
+    crop_manifest_path: Optional[str] = None
+    crops_info: List[Dict] = field(default_factory=list)
+    recog_full_json_path: Optional[str] = None
+    recog_filtered_json_path: Optional[str] = None
+    recog_results: List[Dict] = field(default_factory=list)
+    final_json_path: Optional[str] = None
+    final_results: List[Dict] = field(default_factory=list)
+```
+
+### `BasePipelineStage` Abstract Class
+Each step inherits from a standard interface, allowing any module (e.g. PaddleOCR, CRAFT, CLIP, SigLIP) to be swapped in 1 line of code:
+```python
+class BasePipelineStage(ABC):
+    @abstractmethod
+    def run(self, context: PipelineContext, config: Dict) -> PipelineContext:
+        pass
+```
+
+---
+
+## 2. End-to-End Flow & 4 Concrete Stages
+
+```mermaid
+flowchart TD
+    A[Input Image] --> B[DetectionStage\npaddleocr_det_module.py]
+    B --> C[Detection JSON\npaddleocr_det_output/*_det.json]
+    C --> D[CropExtractionStage\ncrops_extraction.py]
+    A --> D
+    D --> E[Crops Folder & Manifest\ncrops/<image_stem>/ & crops_manifest.json]
+    E --> F[RecognitionStage + ONNX & Batching\npaddleocr_recognition_module.py]
+    F --> G[Full Recog JSON\nrecog_full_results.json]
+    F --> H[Filtered Recog JSON\nfinal_recog.json]
+    G --> I[CLIPFilteringStage + Batching\nCLIP_filtering.py]
+    
+    subgraph Tiered Re-checking Logic
+        I --> J{Rec Confidence?}
+        J -- "Conf >= high_thresh (0.85)" --> K[Keep: KEPT_HIGH_CONF]
+        J -- "Conf < low_thresh (0.20)" --> L[Reject: REJECTED_LOW_REC]
+        J -- "low <= Conf < high" --> M[CLIP Classifier Batch]
+        M -- "Non-Text & CLIP Conf >= clip_thresh" --> N[Reject: REJECTED_CLIP_NON_TEXT]
+        M -- "Text / Low Non-Text Conf" --> O[Keep: KEPT_CLIP_TEXT]
+    end
+    
+    K --> P[Final Verified JSON & Annotated Debug Render]
+    O --> P
+```
+
+---
+
+## 3. Config Structure (`pipeline_config.json`)
+
+```json
+{
+  "paths": {
+    "input_images_dir": "input_images",
+    "det_output_dir": "paddleocr_det_output",
+    "crops_output_dir": "crops",
+    "rec_output_dir": "paddleocr_rec_output",
+    "final_output_dir": "final_pipeline_output"
+  },
+  "runtime": {
+    "use_onnx": true,
+    "device": "cpu",
+    "batch_size": 32
+  },
+  "detection": {
+    "model_name": "PP-OCRv6_medium_det"
+  },
+  "cropping": {
+    "padding": 2,
+    "min_size": 7
+  },
+  "recognition": {
+    "model_name": "PP-OCRv6_medium_rec",
+    "basic_confidence_threshold": 0.50
+  },
+  "filtering_and_rechecking": {
+    "low_rec_threshold": 0.20,
+    "high_rec_threshold": 0.85,
+    "clip_model": "ViT-B/32",
+    "clip_non_text_threshold": 0.0
+  }
+}
+```
+
+---
+
+## 4. Components & Proposed Code Changes
+
+### 1. [NEW] [pipeline_config.json](file:///c:/Users/mouss/Desktop/semantic_classif/pipeline_config.json)
+Central configuration file containing paths, runtime parameters (ONNX, batching), model choices, and thresholds.
+
+### 2. [NEW] [pipeline_core.py](file:///c:/Users/mouss/Desktop/semantic_classif/pipeline_core.py)
+Contains the `PipelineContext` dataclass, `BasePipelineStage` abstract base class, and `OCRRunner` pipeline orchestrator.
+
+### 3. [MODIFY] [paddleocr_det_module.py](file:///c:/Users/mouss/Desktop/semantic_classif/paddleocr_det_module.py)
+Wrap detection logic in a modular `PaddleDetStage(BasePipelineStage)` class while preserving standalone CLI execution.
+
+### 4. [MODIFY] [crops_extraction.py](file:///c:/Users/mouss/Desktop/semantic_classif/crops_extraction.py)
+Wrap crop extraction logic in `CropExtractionStage(BasePipelineStage)` class while maintaining manifest creation and CLI capability.
+
+### 5. [MODIFY] [paddleocr_recognition_module.py](file:///c:/Users/mouss/Desktop/semantic_classif/paddleocr_recognition_module.py)
+Wrap recognition logic in `PaddleRecogStage(BasePipelineStage)` with **batched inference**, generating both `recog_full_results.json` and `final_recog.json`.
+
+### 6. [MODIFY] [CLIP_filtering.py](file:///c:/Users/mouss/Desktop/semantic_classif/CLIP_filtering.py)
+Wrap CLIP re-checking logic in `CLIPFilterStage(BasePipelineStage)` with **batched inference** for crops in the ambiguous confidence range.
+
+### 7. [NEW] [run_pipeline.py](file:///c:/Users/mouss/Desktop/semantic_classif/run_pipeline.py)
+Main entry point to run the modular pipeline end-to-end for single images or directories.
+
+---
+
+## 5. Verification Plan
+
+### Automated Tests & Checks
+1. **Module Import & Abstract Interface Test**: Verify all stages implement `BasePipelineStage`.
+2. **End-to-End Pipeline Execution**: Run `python run_pipeline.py --config pipeline_config.json` on sample input images.
+3. **Artifact Outputs Verification**:
+   - `paddleocr_det_output/<image_stem>_det.json`
+   - `crops/<image_stem>/crop_XXX.png` & `crops/crops_manifest.json`
+   - `paddleocr_rec_output/<image_stem>_rec_full.json`
+   - `paddleocr_rec_output/<image_stem>_final_recog.json`
+   - `final_pipeline_output/<image_stem>_final.json`
+4. **Visual Annotated Check**: Render color-coded annotated image showing kept text vs. eliminated non-text.
