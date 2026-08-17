@@ -23,6 +23,9 @@ sec_grtr/
 
 vclip/
 vlm/
+vocr/
+ocr pipeline design
+analyze_thresholds.py
 
 vocr/
 ocr pipeline design 

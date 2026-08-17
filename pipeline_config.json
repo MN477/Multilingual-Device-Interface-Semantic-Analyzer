@@ -1,0 +1,36 @@
+{
+  "paths": {
+    "input_images_dir": "input",
+    "det_output_dir": "detection_output",
+    "crops_output_dir": "crops_input1",
+    "rec_output_dir": "recognition_output",
+    "final_output_dir": "final_ocr_output"
+  },
+  "runtime": {
+    "use_onnx": true,
+    "device": "cpu",
+    "batch_size": 32
+  },
+  "detection": {
+    "model_name": "PP-OCRv6_medium_det"
+  },
+  "cropping": {
+    "padding": 2,
+    "min_size": 7
+  },
+  "recognition": {
+    "model_name": "PP-OCRv6_medium_rec",
+    "lang": "en",
+    "basic_confidence_threshold": 0.50
+  },
+  "filtering_and_rechecking": {
+    "enable_clip": false,
+    "min_det_score": 0.40,
+    "min_rec_confidence": 0.50,
+    "filter_mode": "AND",
+    "low_rec_threshold": 0.50,
+    "high_rec_threshold": 0.83,
+    "clip_model": "ViT-L/14",
+    "clip_non_text_threshold": 0.0
+  }
+}
