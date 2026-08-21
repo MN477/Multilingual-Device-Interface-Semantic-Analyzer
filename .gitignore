@@ -27,3 +27,8 @@ vocr/
 ocr pipeline design
 analyze_thresholds.py
 
+*.csv
+*.md
+*.txt
+fine_tuned_xlm_roberta_ner/
+merged_standalone_model/
