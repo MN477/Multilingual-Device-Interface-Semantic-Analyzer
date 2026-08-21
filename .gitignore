@@ -29,3 +29,10 @@ analyze_thresholds.py
 
 vocr/
 ocr pipeline design 
+
+
+*.csv
+*.md
+*.txt
+
+fine_tuned_xlm_roberta_ner/
