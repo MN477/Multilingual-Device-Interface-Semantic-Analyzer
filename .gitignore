@@ -36,3 +36,4 @@ ocr pipeline design
 *.txt
 
 fine_tuned_xlm_roberta_ner/
+merged_standalone_model/
