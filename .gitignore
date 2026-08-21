@@ -25,3 +25,9 @@ vclip/
 vlm/
 
 vocr/
+
+*.csv 
+*.md
+*.txt
+fine_tuned_xlm_roberta_ner/
+merged_standalone_model/
