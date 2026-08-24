@@ -1,10 +1,12 @@
 """
-ner_xlm_roberta_processor.py
-============================
-NER Enrichment processor using XLM-RoBERTa (Davlan/xlm-roberta-base-ner-hrl).
-Reads recognition JSON files from 'recognition_output/' (or specified directory),
-runs HuggingFace token classification pipeline with 'aggregation_strategy="simple"',
-tracks inference latency using time.perf_counter(), and saves enriched JSON files into 'xlm_roberta_ner_output/'.
+NER_processor.py
+================
+NER Enrichment processor using HanLP (UD_ONTONOTES_TOK_POS_LEM_FEA_NER_SRL_DEP_SDP_CON_XLMR_BASE).
+Implements BasePipelineStage for modular integration into the OCR pipeline.
+
+Takes recognition results (with regex_matches already applied by regex_filter),
+skips HanLP inference for text blocks already identified by regex,
+and appends HanLP entities with full label_confidences to the remaining blocks.
 """
 
 import os
@@ -15,354 +17,340 @@ import time
 import argparse
 from typing import List, Dict, Any, Optional
 
+# Ensure stdout supports unicode characters
+sys.stdout.reconfigure(encoding='utf-8')
+
 try:
-    import torch
-    from transformers import AutoTokenizer, AutoModelForTokenClassification, pipeline
-    HAS_TRANSFORMERS = True
+    import hanlp
+    HAS_HANLP = True
 except ImportError:
-    HAS_TRANSFORMERS = False
+    HAS_HANLP = False
+
+from pipeline_core import BasePipelineStage, PipelineContext
 
 
-class XLMRobertaEntityProcessor:
-    def __init__(
-        self,
-        model_name: str = "Davlan/xlm-roberta-base-ner-hrl",
-        threshold: float = 0.60,
-        device: str = "cpu"
-    ):
-        if not HAS_TRANSFORMERS:
+# ═══════════════════════════════════════════════════════════════════════════════
+# CORE HANLP ENTITY PROCESSOR
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class HanLPEntityProcessor:
+    """
+    Wraps the HanLP MTL model for Named Entity Recognition.
+    Provides predict_text() for single-text inference and alignment.
+    """
+
+    ONTONOTES_LABELS = [
+        "PERSON", "NORP", "FAC", "ORG", "GPE", "LOC", "PRODUCT", "EVENT",
+        "WORK_OF_ART", "LAW", "LANGUAGE", "DATE", "TIME", "PERCENT",
+        "MONEY", "QUANTITY", "ORDINAL", "CARDINAL", "O"
+    ]
+
+    def __init__(self):
+        if not HAS_HANLP:
             raise ImportError(
-                "Hugging Face transformers is not installed. Please install it using:\n"
-                "  pip install transformers torch"
+                "HanLP is not installed. Please run 'pip install hanlp'."
             )
-
-        self.model_name = model_name
-        self.threshold = threshold
-        self.device = device
-        
-        print(f"Loading tokenizer and model: {model_name}...")
+        print("Loading HanLP model (UD_ONTONOTES_TOK_POS_LEM_FEA_NER_SRL_DEP_SDP_CON_XLMR_BASE)...")
         start_t = time.perf_counter()
-        
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=False)
-        self.model = AutoModelForTokenClassification.from_pretrained(model_name)
-        
-        if device == "cuda":
-            self.model = self.model.to("cuda")
-            device_id = 0
-        else:
-            device_id = -1
-
-        self.ner_pipeline = pipeline(
-            "ner",
-            model=self.model,
-            tokenizer=self.tokenizer,
-            aggregation_strategy="simple",
-            device=device_id
+        self.model = hanlp.load(
+            hanlp.pretrained.mtl.UD_ONTONOTES_TOK_POS_LEM_FEA_NER_SRL_DEP_SDP_CON_XLMR_BASE
         )
-        print(f"XLM-RoBERTa model loaded successfully in {time.perf_counter() - start_t:.2f}s.")
+        self.load_time_sec = time.perf_counter() - start_t
+        print(f"HanLP model loaded successfully in {self.load_time_sec:.2f}s.")
 
-    def get_all_label_confidences(self, text: str) -> Dict[str, float]:
-        """
-        Computes pure model softmax probabilities across all entity categories
-        (e.g., LOC, ORG, PER, DATE, O) directly from the model logits.
-        """
-        if not text or not text.strip():
-            return {}
-            
-        try:
-            inputs = self.tokenizer(text, return_tensors="pt")
-            if self.device == "cuda":
-                inputs = {k: v.to("cuda") for k, v in inputs.items()}
-                
-            with torch.no_grad():
-                outputs = self.model(**inputs)
-                # Softmax over logits to get exact probabilities
-                probs = torch.softmax(outputs.logits[0], dim=-1)
-                
-                # Exclude special tokens ([CLS], [SEP]) if present
-                valid_probs = probs[1:-1] if len(probs) > 2 else probs
-                mean_probs = valid_probs.mean(dim=0)
-                
-            label_confidences = {}
-            for id_idx, label_name in self.model.config.id2label.items():
-                clean_label = label_name.replace("B-", "").replace("I-", "")
-                score_val = round(float(mean_probs[id_idx]), 4)
-                if clean_label not in label_confidences or score_val > label_confidences[clean_label]:
-                    label_confidences[clean_label] = score_val
-                    
-            return label_confidences
-        except Exception as e:
-            return {}
+    @staticmethod
+    def align_tokens_to_chars(text: str, tokens: List[str]) -> List[tuple]:
+        """Align word-level tokens back to character-level start/end offsets."""
+        char_spans = []
+        current_char_idx = 0
+        for tok in tokens:
+            start = text.find(tok, current_char_idx)
+            if start == -1:
+                start = text.lower().find(tok.lower(), current_char_idx)
+            if start != -1:
+                end = start + len(tok)
+                char_spans.append((start, end))
+                current_char_idx = end
+            else:
+                char_spans.append((current_char_idx, current_char_idx + len(tok)))
+                current_char_idx += len(tok)
+        return char_spans
 
-    def predict_text(self, text: str, threshold: Optional[float] = None) -> tuple[List[Dict[str, Any]], float]:
+    def predict_text(self, text: str) -> tuple:
+        """
+        Run HanLP on a single text string.
+        Returns: (list of entity dicts, inference_time_sec)
+        """
         if not text or not text.strip():
             return [], 0.0
 
-        if threshold is None:
-            threshold = self.threshold
-
         start_time = time.perf_counter()
         try:
-            # 1. Run pipeline to get candidate entities
-            raw_entities = self.ner_pipeline(text)
+            doc = self.model(text)
             elapsed_time = time.perf_counter() - start_time
 
-            if not raw_entities:
-                return [], elapsed_time
+            # Find the NER key in the document
+            ner_key = None
+            for k in doc.keys():
+                if "ner" in k:
+                    ner_key = k
+                    break
 
-            # 2. Tokenize full text and run model forward pass to get contextual softmax probabilities
-            inputs = self.tokenizer(text, return_tensors="pt", return_offsets_mapping=True)
-            offsets = inputs.pop("offset_mapping")[0].tolist()  # character start/end offsets for each token
-            
-            if self.device == "cuda":
-                inputs = {k: v.to("cuda") for k, v in inputs.items()}
-                
-            with torch.no_grad():
-                outputs = self.model(**inputs)
-                probs = torch.softmax(outputs.logits[0], dim=-1)
+            predicted_entities = []
+            if ner_key and doc[ner_key]:
+                tokens = doc.get("tok", doc.get("tok/fine", []))
+                raw_ner = doc[ner_key]
+                char_spans = self.align_tokens_to_chars(text, tokens)
 
-            # Strategy B: Merge adjacent subword tokens belonging to the same entity group
-            merged_entities = []
-            current_group = None
-
-            for ent in raw_entities:
-                group = ent.get("entity_group")
-                score = float(ent.get("score", 0.0))
-                word = ent.get("word", "")
-                start = int(ent.get("start", 0))
-                end = int(ent.get("end", 0))
-
-                if current_group is None:
-                    current_group = {
-                        "entity_group": group,
-                        "scores": [score],
-                        "words": [word],
-                        "start": start,
-                        "end": end
-                    }
-                else:
-                    if group == current_group["entity_group"] and start <= current_group["end"] + 1:
-                        current_group["scores"].append(score)
-                        current_group["words"].append(word)
-                        current_group["end"] = end
+                for ent in raw_ner:
+                    if len(ent) == 4:
+                        word, label, start_tok, end_tok = ent
+                        try:
+                            start_char = char_spans[start_tok][0]
+                            end_char = char_spans[end_tok - 1][1]
+                        except IndexError:
+                            start_char = text.find(word)
+                            end_char = start_char + len(word) if start_char != -1 else 0
                     else:
-                        merged_entities.append(current_group)
-                        current_group = {
-                            "entity_group": group,
-                            "scores": [score],
-                            "words": [word],
-                            "start": start,
-                            "end": end
-                        }
+                        word, label = ent[0], ent[1]
+                        start_char = text.find(word)
+                        end_char = start_char + len(word) if start_char != -1 else 0
 
-            if current_group:
-                merged_entities.append(current_group)
+                    # Build label_confidences (CRF decoding → assign 1.0 to predicted)
+                    label_confidences = {lbl: 0.0 for lbl in self.ONTONOTES_LABELS}
+                    label_confidences[label] = 1.0
+                    if label != "O":
+                        label_confidences["O"] = 0.0
 
-            formatted_entities = []
-            for item in merged_entities:
-                ent_start = item["start"]
-                ent_end = item["end"]
-                sub_text = text[ent_start:ent_end] if 0 <= ent_start < ent_end <= len(text) else "".join(item["words"])
+                    predicted_entities.append({
+                        "entity_group": label,
+                        "score": 1.0,
+                        "word": word,
+                        "start": start_char,
+                        "end": end_char,
+                        "label_confidences": label_confidences
+                    })
 
-                # Find token indices corresponding to this entity character span
-                token_indices = [
-                    idx for idx, (ostart, oend) in enumerate(offsets)
-                    if ostart < ent_end and oend > ent_start
-                ]
+            return predicted_entities, elapsed_time
 
-                # Extract pure contextual model probabilities for the matched token span
-                if token_indices:
-                    entity_probs = probs[token_indices].mean(dim=0)
-                else:
-                    entity_probs = probs.mean(dim=0)
-
-                label_confidences = {}
-                for id_idx, label_name in self.model.config.id2label.items():
-                    clean_label = label_name.replace("B-", "").replace("I-", "")
-                    score_val = round(float(entity_probs[id_idx]), 4)
-                    if clean_label not in label_confidences or score_val > label_confidences[clean_label]:
-                        label_confidences[clean_label] = score_val
-
-                if label_confidences:
-                    # Pick highest confidence label from the contextual probabilities
-                    highest_label = max(label_confidences, key=label_confidences.get)
-                    highest_score = label_confidences[highest_label]
-
-                    # If the highest confidence label is "O" (no entity), discard/skip this entity
-                    if highest_label == "O":
-                        continue
-
-                    # Overwrite entity group and score to align with the true model probabilities
-                    if highest_score >= threshold:
-                        formatted_entities.append({
-                            "entity_group": highest_label,
-                            "score": round(highest_score, 4),
-                            "word": sub_text,
-                            "start": ent_start,
-                            "end": ent_end,
-                            "label_confidences": label_confidences
-                        })
-
-            return formatted_entities, elapsed_time
         except Exception as e:
             elapsed_time = time.perf_counter() - start_time
-            print(f"Warning: XLM-RoBERTa prediction failed for text '{text}': {e}")
+            print(f"Warning: HanLP prediction failed for text '{text}': {e}")
             return [], elapsed_time
 
-    def process_file(self, json_path: str, output_dir: str, threshold: Optional[float] = None) -> Dict[str, Any]:
-        with open(json_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
 
-        results = data.get("results", []) or data.get("all_detections_with_status", [])
-        image_stem = data.get("image_stem", os.path.basename(json_path).replace("_final_recog.json", "").replace("_rec_full.json", "").replace(".json", ""))
+# ═══════════════════════════════════════════════════════════════════════════════
+# PIPELINE STAGE (for use with PipelineRunner)
+# ═══════════════════════════════════════════════════════════════════════════════
 
-        file_start_t = time.perf_counter()
-        enriched_results = []
-        file_inference_times = []
+class HanLPNERStage(BasePipelineStage):
+    """
+    Pipeline stage that runs HanLP NER on recognition results.
+    Skips text blocks that already have regex_matches.
+    Appends entities to each result item.
+    """
 
-        for item in results:
+    def __init__(self):
+        self._processor = None  # Lazy-loaded
+
+    @property
+    def name(self) -> str:
+        return "HanLPNERStage"
+
+    def _ensure_processor(self):
+        if self._processor is None:
+            self._processor = HanLPEntityProcessor()
+
+    def run(self, context: PipelineContext, config: Dict[str, Any]) -> PipelineContext:
+        ner_cfg = config.get("ner", {})
+
+        # Allow disabling the stage from config
+        if not ner_cfg.get("enabled", True):
+            print(f"[{self.name}] Skipped (disabled in config).")
+            source = (
+                context.regex_enriched_results
+                or context.final_results
+                or context.filtered_recog_results
+                or context.recog_results
+            )
+            context.ner_enriched_results = list(source)
+            return context
+
+        self._ensure_processor()
+
+        # Pick the most recent results from the pipeline chain
+        source = (
+            context.regex_enriched_results
+            or context.final_results
+            or context.filtered_recog_results
+            or context.recog_results
+        )
+
+        if not source:
+            print(f"[{self.name}] No results available for NER.")
+            context.ner_enriched_results = []
+            return context
+
+        enriched = []
+        total_entities = 0
+        inference_times = []
+
+        for item in source:
             item_copy = dict(item)
             text = item_copy.get("transcribed_text", "")
+            regex_matches = item_copy.get("regex_matches", [])
 
-            entities, elapsed_time = self.predict_text(text, threshold=threshold)
-            if text.strip():
-                file_inference_times.append(elapsed_time)
-
-            item_copy["entities"] = entities
-            # Pick the entity with the highest score as the primary entity
-            if entities:
-                best_entity = max(entities, key=lambda e: e["score"])
-                item_copy["entity"] = best_entity["entity_group"]
+            # Skip HanLP if regex already identified this block
+            if regex_matches:
+                entities = []
+                elapsed = 0.0
             else:
-                item_copy["entity"] = None
-            item_copy["inference_time_ms"] = round(elapsed_time * 1000.0, 2)
+                entities, elapsed = self._processor.predict_text(text)
+                if text.strip():
+                    inference_times.append(elapsed)
 
-            enriched_results.append(item_copy)
+            existing = item_copy.get("entities", [])
+            existing.extend(entities)
+            item_copy["entities"] = existing
+            item_copy["hanlp_inference_time_ms"] = round(elapsed * 1000.0, 2)
+            total_entities += len(entities)
+            enriched.append(item_copy)
 
-        file_elapsed_sec = time.perf_counter() - file_start_t
-        total_block_inference_time = sum(file_inference_times)
-        avg_crop_ms = (total_block_inference_time * 1000.0 / len(file_inference_times)) if file_inference_times else 0.0
+        context.ner_enriched_results = enriched
+        print(f"[{self.name}] Processed {len(enriched)} blocks, found {total_entities} NER entity(ies).")
+        return context
 
-        os.makedirs(output_dir, exist_ok=True)
-        out_path = os.path.join(output_dir, f"{image_stem}_xlm_roberta_ner.json")
 
-        total_entities_count = sum(len(x.get("entities", [])) for x in enriched_results)
+# ═══════════════════════════════════════════════════════════════════════════════
+# STANDALONE FUNCTIONS (for direct file processing or Streamlit use)
+# ═══════════════════════════════════════════════════════════════════════════════
 
-        output_dict = {
-            "image_stem": image_stem,
-            "source_image": data.get("source_image", ""),
-            "ner_model": self.model_name,
-            "total_ocr_items": len(enriched_results),
-            "total_entities_found": total_entities_count,
-            "inference_stats": {
-                "file_inference_time_sec": round(file_elapsed_sec, 4),
-                "total_text_inference_time_sec": round(total_block_inference_time, 4),
-                "avg_crop_inference_time_ms": round(avg_crop_ms, 2)
-            },
-            "results": enriched_results
-        }
+def process_results_list(
+    processor: HanLPEntityProcessor,
+    results: List[Dict[str, Any]]
+) -> tuple:
+    """
+    Process a list of recognition result dicts through HanLP NER.
+    Skips items that already have regex_matches.
+    Returns: (enriched_results, total_entities, total_inference_time_sec)
+    """
+    enriched = []
+    total_entities = 0
+    total_inference_time = 0.0
 
-        with open(out_path, "w", encoding="utf-8") as f:
-            json.dump(output_dict, f, ensure_ascii=False, indent=2)
+    for item in results:
+        item_copy = dict(item)
+        text = item_copy.get("transcribed_text", "")
+        regex_matches = item_copy.get("regex_matches", [])
 
-        print(f"[XLM-RoBERTa] '{image_stem}': {total_entities_count} entity(ies) found across {len(enriched_results)} items | Time: {total_block_inference_time:.4f}s ({avg_crop_ms:.2f}ms/block)")
-        return {
-            "image_stem": image_stem,
-            "total_items": len(enriched_results),
-            "total_entities": total_entities_count,
-            "inference_times": file_inference_times,
-            "file_elapsed_sec": file_elapsed_sec
-        }
+        if regex_matches:
+            entities = []
+            elapsed = 0.0
+        else:
+            entities, elapsed = processor.predict_text(text)
+            total_inference_time += elapsed
+
+        existing = item_copy.get("entities", [])
+        existing.extend(entities)
+        item_copy["entities"] = existing
+        item_copy["hanlp_inference_time_ms"] = round(elapsed * 1000.0, 2)
+        total_entities += len(entities)
+        enriched.append(item_copy)
+
+    return enriched, total_entities, total_inference_time
+
+
+def process_single_json(
+    processor: HanLPEntityProcessor,
+    json_path: str,
+    output_dir: str
+) -> Dict[str, Any]:
+    """Process a single regex-enriched JSON file through HanLP NER."""
+    with open(json_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    results = data.get("results", [])
+    image_stem = data.get(
+        "image_stem",
+        os.path.basename(json_path).replace("_regex.json", "").replace(".json", "")
+    )
+
+    start_t = time.perf_counter()
+    enriched, total_entities, total_inf_time = process_results_list(processor, results)
+    file_elapsed = time.perf_counter() - start_t
+
+    data["results"] = enriched
+    data["ner_model"] = "UD_ONTONOTES_TOK_POS_LEM_FEA_NER_SRL_DEP_SDP_CON_XLMR_BASE"
+    data["total_ner_entities_found"] = total_entities
+    data["ner_inference_stats"] = {
+        "file_inference_time_sec": round(file_elapsed, 4),
+        "total_text_inference_time_sec": round(total_inf_time, 4),
+    }
+
+    os.makedirs(output_dir, exist_ok=True)
+    out_name = f"{image_stem}_hanlp_ner.json"
+    out_path = os.path.join(output_dir, out_name)
+
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+    print(f"[HanLP] '{image_stem}': {total_entities} entity(ies) | Time: {total_inf_time:.4f}s")
+    return {
+        "image_stem": image_stem,
+        "total_entities": total_entities,
+        "inference_time_sec": total_inf_time,
+        "out_path": out_path
+    }
 
 
 def process_directory(
-    rec_dir: str = "recognition_output",
-    output_dir: str = "xlm_roberta_ner_output",
-    model_name: str = "Davlan/xlm-roberta-base-ner-hrl",
-    threshold: float = 0.30,
-    device: str = "cpu"
-) -> Dict[str, Any]:
-    if not os.path.exists(rec_dir):
-        print(f"Error: input directory '{rec_dir}' does not exist.")
+    input_dir: str = "regex_detection",
+    output_dir: str = "hanlp_ner_output"
+):
+    """Process all regex-enriched JSON files in a directory through HanLP NER."""
+    if not os.path.exists(input_dir):
+        print(f"Error: input directory '{input_dir}' does not exist.")
         sys.exit(1)
 
-    json_files = sorted(glob.glob(os.path.join(rec_dir, "*_final_recog.json")))
+    json_files = sorted(glob.glob(os.path.join(input_dir, "*.json")))
     if not json_files:
-        json_files = sorted(glob.glob(os.path.join(rec_dir, "*_rec_full.json")))
-    if not json_files:
-        json_files = sorted(glob.glob(os.path.join(rec_dir, "*.json")))
-
-    if not json_files:
-        print(f"No JSON files found in '{rec_dir}'.")
+        print(f"No JSON files found in '{input_dir}'.")
         sys.exit(1)
 
-    load_start_t = time.perf_counter()
-    processor = XLMRobertaEntityProcessor(
-        model_name=model_name,
-        threshold=threshold,
-        device=device
-    )
-    load_time_sec = time.perf_counter() - load_start_t
+    processor = HanLPEntityProcessor()
 
-    print(f"\nProcessing {len(json_files)} JSON file(s) with XLM-RoBERTa -> {output_dir}\n" + "=" * 75)
-    
-    total_images = len(json_files)
-    total_crops = 0
+    print(f"\nProcessing {len(json_files)} JSON file(s) with HanLP -> {output_dir}\n" + "=" * 75)
+
     total_entities = 0
-    all_inference_times = []
-    total_file_elapsed_sec = 0.0
+    total_inf_time = 0.0
 
     for jf in json_files:
-        res = processor.process_file(jf, output_dir, threshold=threshold)
-        total_crops += res["total_items"]
+        res = process_single_json(processor, jf, output_dir)
         total_entities += res["total_entities"]
-        all_inference_times.extend(res["inference_times"])
-        total_file_elapsed_sec += res["file_elapsed_sec"]
-
-    total_inference_time = sum(all_inference_times)
-    avg_time_per_image = total_file_elapsed_sec / max(total_images, 1)
-    avg_time_per_crop_ms = (total_inference_time * 1000.0) / max(len(all_inference_times), 1)
-
-    stats = {
-        "model_name": model_name,
-        "total_images": total_images,
-        "total_crops": total_crops,
-        "total_entities": total_entities,
-        "load_time_sec": round(load_time_sec, 3),
-        "total_inference_time_sec": round(total_inference_time, 4),
-        "avg_time_per_image_sec": round(avg_time_per_image, 3),
-        "avg_time_per_crop_ms": round(avg_time_per_crop_ms, 2)
-    }
+        total_inf_time += res["inference_time_sec"]
 
     print("=" * 75)
-    print("  XLM-RoBERTa INFERENCE LATENCY REPORT")
+    print("  HanLP NER INFERENCE REPORT")
     print("=" * 75)
-    print(f"  - Model Load Time         : {stats['load_time_sec']:.3f} s")
-    print(f"  - Total Images Processed  : {stats['total_images']}")
-    print(f"  - Total Text Blocks       : {stats['total_crops']}")
-    print(f"  - Total Entities Found    : {stats['total_entities']}")
-    print(f"  - Total Inference Time    : {stats['total_inference_time_sec']:.4f} s")
-    print(f"  - AVG Latency per Image   : {stats['avg_time_per_image_sec']:.3f} s / image")
-    print(f"  - AVG Latency per Block   : {stats['avg_time_per_crop_ms']:.2f} ms ({stats['avg_time_per_crop_ms'] / 1000.0:.6f} s)")
+    print(f"  - Files Processed     : {len(json_files)}")
+    print(f"  - Total Entities      : {total_entities}")
+    print(f"  - Total Inference     : {total_inf_time:.4f}s")
     print("=" * 75 + "\n")
-
-    return stats
 
 
 def main():
-    parser = argparse.ArgumentParser(description="XLM-RoBERTa NER Processor for Recognition JSONs.")
-    parser.add_argument("--rec_dir", type=str, default="recognition_output", help="Directory containing recognition JSON files.")
-    parser.add_argument("--out_dir", type=str, default="xlm_roberta_ner_output", help="Output directory for XLM-RoBERTa NER JSONs.")
-    parser.add_argument("--model", type=str, default="Davlan/xlm-roberta-base-ner-hrl", help="XLM-RoBERTa pretrained model name.")
-    parser.add_argument("--device", type=str, default="cpu", choices=["cpu", "cuda"], help="Inference device.")
+    parser = argparse.ArgumentParser(description="HanLP NER Processor.")
+    parser.add_argument("--input", type=str, default="regex_detection",
+                        help="Input directory of regex-enriched JSONs or a single JSON file.")
+    parser.add_argument("--out_dir", type=str, default="hanlp_ner_output",
+                        help="Output directory for NER-enriched JSONs.")
     args = parser.parse_args()
 
-    process_directory(
-        rec_dir=args.rec_dir,
-        output_dir=args.out_dir,
-        model_name=args.model,
-        device=args.device
-    )
+    if os.path.isfile(args.input):
+        processor = HanLPEntityProcessor()
+        process_single_json(processor, args.input, args.out_dir)
+    else:
+        process_directory(input_dir=args.input, output_dir=args.out_dir)
 
 
 if __name__ == "__main__":

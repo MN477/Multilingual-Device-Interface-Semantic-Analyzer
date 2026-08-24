@@ -57,6 +57,15 @@ class PipelineContext:
     final_results: List[Dict[str, Any]] = field(default_factory=list)
     clip_inference_time_sec: float = 0.0
     
+    # Stage 5: Regex Filter outputs
+    regex_enriched_results: List[Dict[str, Any]] = field(default_factory=list)
+    
+    # Stage 6: NER outputs
+    ner_enriched_results: List[Dict[str, Any]] = field(default_factory=list)
+    
+    # Stage 7: Classification outputs
+    classified_results: List[Dict[str, Any]] = field(default_factory=list)
+    
     def __post_init__(self):
         if not self.image_stem and self.image_path:
             filename = os.path.basename(self.image_path)

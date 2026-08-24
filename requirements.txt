@@ -1,45 +1,24 @@
 # ==============================================================================
 # End-to-End Modular OCR Pipeline Requirements
 # ==============================================================================
-# 
-# Recommended Installation Order (to prevent Windows DLL & OpenMP conflicts):
-# 
-# 1. Create and activate a clean virtual environment:
-#    python -m venv vocr
-#    .\vocr\Scripts\Activate.ps1           (Windows PowerShell)
-#    source vocr/bin/activate               (Linux / macOS)
-# 
-# 2. Upgrade pip:
-#    python -m pip install --upgrade pip
-# 
-# 3. Install PyTorch (CPU wheel recommended for Windows CPU stability):
-#    [CPU Mode]: pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-#    [GPU Mode]: pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
-# 
-# 4. Install PaddlePaddle Backend:
-#    [CPU Mode]: pip install paddlepaddle -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
-#    [GPU Mode]: pip install paddlepaddle-gpu
-# 
-# 5. Install all pipeline dependencies:
-#    pip install -r requirements.txt
-# 
-# ==============================================================================
 
-# Core Image Processing & Spatial Geometry
-opencv-python>=4.8.0
+# User Interface
+streamlit
+
+# Core Image & Data Processing
 numpy>=1.24.0,<2.4.0
+opencv-python>=4.8.0
 pillow>=10.0.0
-shapely>=2.0.0
-scikit-image>=0.20.0
-matplotlib>=3.7.0
 
-# OCR Engine & Configuration
-paddleocr>=3.7.0
-pyyaml>=6.0
+# Deep Learning Backend
+torch
+
+# Text Detection & Recognition
+paddlepaddle
+paddleocr
+
+# Named Entity Recognition (NER)
+hanlp
 
 # Zero-Shot CLIP Text/Non-Text Classifier
 openai-clip
-
-# Optional: Multilingual-CLIP Support (for 100+ languages CLIP prompts)
-# multilingual-clip
-# sentence-transformers

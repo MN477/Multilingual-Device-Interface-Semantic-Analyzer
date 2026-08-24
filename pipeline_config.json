@@ -32,5 +32,22 @@
     "high_rec_threshold": 0.83,
     "clip_model": "ViT-L/14",
     "clip_non_text_threshold": 0.0
+  },
+  "regex": {
+    "enabled": true,
+    "patterns_file": "regex_patterns.json"
+  },
+  "ner": {
+    "enabled": true
+  },
+  "classification": {
+    "enabled": true,
+    "variable_ner_labels": [
+      "PERSON", "ORG", "GPE", "LOC", "FAC", "NORP",
+      "EVENT", "WORK_OF_ART", "PRODUCT", "LAW", "LANGUAGE"
+    ],
+    "static_ner_labels": [
+      "DATE", "TIME", "PERCENT", "MONEY", "QUANTITY", "ORDINAL", "CARDINAL"
+    ]
   }
 }

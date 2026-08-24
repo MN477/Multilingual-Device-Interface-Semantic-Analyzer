@@ -31,6 +31,9 @@ from paddleocr_det_module import PaddleDetStage
 from crops_extraction import CropExtractionStage
 from paddleocr_recognition_module import RecognitionStage
 from CLIP_filtering import CLIPFilterStage
+from regex_filter import RegexFilterStage
+from NER_processor import HanLPNERStage
+from classification_stage import ClassificationStage
 
 
 def print_latency_report(context: PipelineContext):
@@ -151,7 +154,16 @@ def build_pipeline(config: Dict[str, Any]) -> PipelineRunner:
         device=runtime_cfg.get("device", "cpu")
     )
 
-    stages = [det_stage, crop_stage, rec_stage, clip_stage]
+    # Stage 5: Regex Pattern Filter
+    regex_stage = RegexFilterStage()
+
+    # Stage 6: HanLP NER
+    ner_stage = HanLPNERStage()
+
+    # Stage 7: Static/Variable Classification
+    cls_stage = ClassificationStage()
+
+    stages = [det_stage, crop_stage, rec_stage, clip_stage, regex_stage, ner_stage, cls_stage]
     return PipelineRunner(stages=stages, config=config)
 
 
@@ -215,6 +227,9 @@ def main():
         print(f"  - Detections Found:          {len(ctx.detections)}")
         print(f"  - Crops Extracted:           {len(ctx.crops_info)}")
         print(f"  - Final Verified Text:       {len(ctx.final_results)}")
+        print(f"  - Regex Enriched:            {len(ctx.regex_enriched_results)}")
+        print(f"  - NER Enriched:              {len(ctx.ner_enriched_results)}")
+        print(f"  - Classified Results:        {len(ctx.classified_results)}")
         print(f"  - Detection JSON:            {ctx.det_json_path}")
         print(f"  - Full Recog JSON:           {ctx.recog_full_json_path}")
         print(f"  - Filtered Recog JSON:       {ctx.recog_filtered_json_path}")
